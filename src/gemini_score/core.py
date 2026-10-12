@@ -7,33 +7,26 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
-from .languages import LanguageInfo, resolve_language
 from .models import GeminiScoreResult
-from .similarity import DEFAULT_EMBEDDING_MODEL, GeminiEmbeddings
-from .translator import DEFAULT_GEMINI_MODEL, GeminiTranslator
+from .similarity import DEFAULT_MODEL, GeminiEmbedder
 
 logger = logging.getLogger(__name__)
 
 
 class GeminiScore:
-    """Evaluates African-language Machine Translation models against English references.
+    """Evaluates Machine Translation outputs against references using Gemini multilingual embeddings.
 
-    It works entirely through Google Gemini API:
-    1. Translating candidate African language text to English using Gemini Flash 3+ (default: 'gemini-3.8-flash').
-    2. Measuring semantic similarity between the back-translated English and the reference
-       English using the latest Gemini text embedding model (default: 'gemini-embedding-002').
-
-    This provides a clean, unified evaluation metric with zero local models or extra bloat.
+    Directly maps candidate predictions and reference translations (or source sentences)
+    into Gemini's shared cross-lingual embedding space (default: 'gemini-embedding-002')
+    and computes semantic cosine similarity without translation overhead or extra libraries.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = DEFAULT_GEMINI_MODEL,
-        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+        model: str = DEFAULT_MODEL,
         scale: str = "percent",
-        batch_size: int = 16,
-        max_workers: int = 4,
+        batch_size: int = 64,
         max_retries: int = 4,
         enable_cache: bool = True,
         client: Optional[Any] = None,
@@ -45,72 +38,51 @@ class GeminiScore:
         api_key: str, optional
             Gemini API key. Defaults to GEMINI_API_KEY / GOOGLE_API_KEY from environment.
         model: str
-            Gemini translation model name (default: 'gemini-3.8-flash'). Requires Flash 3.0+.
-        embedding_model: str
-            Gemini text embedding model (default: 'gemini-embedding-002').
+            Gemini multilingual text embedding model (default: 'gemini-embedding-002').
         scale: str
             Output scoring scale: 'percent' (0-100, default), 'unit' (0-1), or 'raw' (-1 to 1).
         batch_size: int
-            Number of sentences per prompt batch.
-        max_workers: int
-            Worker thread concurrency for translation.
+            Number of sentences per embed_content request.
         max_retries: int
             Maximum retry attempts on rate limits / network errors.
         enable_cache: bool
-            Whether to cache translations and embeddings in memory.
+            Whether to cache embeddings in memory.
         client: Any, optional
             Pre-configured GenAI client or mock client.
         """
-        self.embedding_model = embedding_model
+        self.model = model
         self.scale = scale
 
-        # Shared translator instance
-        self.translator = GeminiTranslator(
+        self.embedder = GeminiEmbedder(
             api_key=api_key,
             model=model,
             batch_size=batch_size,
-            max_workers=max_workers,
             max_retries=max_retries,
             enable_cache=enable_cache,
             client=client,
-        )
-        self.model = self.translator.model
-
-        # Gemini embeddings similarity engine
-        self.similarity_engine = GeminiEmbeddings(
-            client=self.translator.client,
-            model=embedding_model,
-            max_retries=max_retries,
-            enable_cache=enable_cache,
         )
 
     def score(
         self,
         predictions: Union[str, Sequence[str]],
         references: Union[str, Sequence[Union[str, Sequence[str]]]],
-        language: Union[str, LanguageInfo, Sequence[Union[str, LanguageInfo]]],
         scale: Optional[str] = None,
     ) -> GeminiScoreResult:
-        """Computes GeminiScore for a set of predictions and English references.
+        """Computes GeminiScore for a set of predictions and references.
 
         Parameters
         ----------
         predictions: str or Sequence[str]
-            Target hypothesis sentence(s) generated in an African language.
+            Target hypothesis sentence(s).
         references: str, Sequence[str], or Sequence[Sequence[str]]
-            Reference sentence(s) in English (e.g. original source or reference translations).
-        language: str, LanguageInfo, or Sequence[str | LanguageInfo]
-            African language name, ISO 639-3 code (e.g. 'yor', 'swh', 'twi'), or a list of
-            languages corresponding to each sample in predictions.
+            Reference sentence(s).
         scale: str, optional
             Override output scale ('percent', 'unit', 'raw'). Defaults to self.scale.
 
         Returns
         -------
         GeminiScoreResult
-            Comprehensive evaluation result with system-level and sentence-level scores.
         """
-        # Normalize predictions to a list
         if isinstance(predictions, str):
             pred_list = [predictions]
         else:
@@ -123,19 +95,14 @@ class GeminiScore:
                 scores=[],
                 predictions=[],
                 references=[],
-                translations=[],
-                languages=[],
                 scale=scale or self.scale,
                 model=self.model,
-                embedding_model=self.embedding_model,
             )
 
-        # Normalize references to a list
         if isinstance(references, str):
             ref_list: List[Union[str, Sequence[str]]] = [references]
         elif isinstance(references, (list, tuple)):
             if n == 1 and len(references) > 1 and all(isinstance(r, str) for r in references):
-                # Single prediction evaluated against multiple references: references = [ref1, ref2]
                 ref_list = [list(references)]
             else:
                 ref_list = list(references)
@@ -147,29 +114,11 @@ class GeminiScore:
                 f"Number of predictions ({n}) must match number of references ({len(ref_list)})."
             )
 
-        # Normalize languages
-        if isinstance(language, (str, LanguageInfo)):
-            resolved_lang_objs = [resolve_language(language)] * n
-        elif isinstance(language, (list, tuple)):
-            if len(language) != n:
-                raise ValueError(
-                    f"Number of languages ({len(language)}) must match number of predictions ({n})."
-                )
-            resolved_lang_objs = [resolve_language(l) for l in language]
-        else:
-            raise TypeError(f"Unsupported language type: {type(language).__name__}")
-
         active_scale = scale or self.scale
 
-        # Step 1: Translate African predictions to English via Gemini
-        translations = self.translator.translate_batch(
-            texts=pred_list,
-            languages=resolved_lang_objs,
-        )
-
-        # Step 2: Compute semantic sentence similarity via Gemini Embeddings
-        raw_scores = self.similarity_engine.compute_similarity(
-            translations=translations,
+        # Compute semantic cosine similarity directly using Gemini multilingual embeddings
+        raw_scores = self.embedder.compute_similarity(
+            predictions=pred_list,
             references=ref_list,
             scale=active_scale,
         )
@@ -182,44 +131,39 @@ class GeminiScore:
             scores=sentence_scores,
             predictions=pred_list,
             references=ref_list,
-            translations=translations,
-            languages=[l.prompt_name for l in resolved_lang_objs],
             scale=active_scale,
             model=self.model,
-            embedding_model=self.embedding_model,
         )
 
     def compute(
         self,
         predictions: Union[str, Sequence[str]],
         references: Union[str, Sequence[Union[str, Sequence[str]]]],
-        language: Union[str, LanguageInfo, Sequence[Union[str, LanguageInfo]]],
         scale: Optional[str] = None,
     ) -> Dict[str, Any]:
         """HF Evaluate-compatible method returning a metrics dictionary."""
         res = self.score(
             predictions=predictions,
             references=references,
-            language=language,
             scale=scale,
         )
         return {
             "gemini_score": res.score,
             "scores": res.scores,
-            "translations": res.translations,
         }
+
+    def encode(self, texts: Sequence[str], normalize: bool = True) -> np.ndarray:
+        """Utility method to directly generate embeddings for a list of texts."""
+        return self.embedder.encode(texts, normalize=normalize)
 
 
 def score(
     predictions: Union[str, Sequence[str]],
     references: Union[str, Sequence[Union[str, Sequence[str]]]],
-    language: Union[str, LanguageInfo, Sequence[Union[str, LanguageInfo]]],
     api_key: Optional[str] = None,
-    model: str = DEFAULT_GEMINI_MODEL,
-    embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+    model: str = DEFAULT_MODEL,
     scale: str = "percent",
-    batch_size: int = 16,
-    max_workers: int = 4,
+    batch_size: int = 64,
     enable_cache: bool = True,
     client: Optional[Any] = None,
 ) -> GeminiScoreResult:
@@ -228,25 +172,19 @@ def score(
     Parameters
     ----------
     predictions: str or Sequence[str]
-        Target hypothesis sentence(s) in African language.
+        Target hypothesis sentence(s).
     references: str or Sequence[str | Sequence[str]]
-        Reference English sentences.
-    language: str, LanguageInfo, or Sequence[str | LanguageInfo]
-        African language name(s) or ISO code(s) (resolved via afriso).
+        Reference sentence(s).
     api_key: str, optional
         Gemini API key. Defaults to GEMINI_API_KEY in environment.
     model: str
-        Gemini model name (default: 'gemini-3.8-flash'). Requires Flash 3.0+.
-    embedding_model: str
         Gemini embedding model (default: 'gemini-embedding-002').
     scale: str
         Scoring scale ('percent', 'unit', 'raw').
     batch_size: int
-        Batch size per Gemini prompt call.
-    max_workers: int
-        Thread concurrency.
+        Batch size per embed_content call.
     enable_cache: bool
-        Whether to cache translations.
+        Whether to cache embeddings.
     client: Any, optional
         Pre-configured or mock GenAI client.
 
@@ -257,35 +195,22 @@ def score(
     scorer = GeminiScore(
         api_key=api_key,
         model=model,
-        embedding_model=embedding_model,
         scale=scale,
         batch_size=batch_size,
-        max_workers=max_workers,
         enable_cache=enable_cache,
         client=client,
     )
-    return scorer.score(
-        predictions=predictions,
-        references=references,
-        language=language,
-    )
+    return scorer.score(predictions=predictions, references=references)
 
 
 def compute(
     predictions: Union[str, Sequence[str]],
     references: Union[str, Sequence[Union[str, Sequence[str]]]],
-    language: Union[str, LanguageInfo, Sequence[Union[str, LanguageInfo]]],
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Hugging Face Evaluate-style functional interface."""
-    res = score(
-        predictions=predictions,
-        references=references,
-        language=language,
-        **kwargs,
-    )
+    res = score(predictions=predictions, references=references, **kwargs)
     return {
         "gemini_score": res.score,
         "scores": res.scores,
-        "translations": res.translations,
     }

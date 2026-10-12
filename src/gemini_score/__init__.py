@@ -1,31 +1,14 @@
-"""GeminiScore: Semantic MT evaluation metric for African languages.
-
-Evaluates Machine Translation hypotheses by translating African language predictions
-to English with Gemini Flash 3+ and computing semantic sentence similarity with
-the latest Gemini text embedding models.
-"""
+"""GeminiScore: Semantic MT evaluation metric using Gemini multilingual text embeddings."""
 
 from .core import GeminiScore, compute, score
-from .languages import (
-    LanguageInfo,
-    is_supported_language,
-    list_supported_languages,
-    resolve_language,
-    search_languages,
-)
 from .models import GeminiScoreResult, get_performance_tier
 from .similarity import (
     DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_MODEL,
+    GeminiAuthError,
+    GeminiEmbedder,
     GeminiEmbeddings,
     SentenceSimilarity,
-)
-from .translator import (
-    DEFAULT_GEMINI_MODEL,
-    MINIMUM_GEMINI_VERSION,
-    GeminiAuthError,
-    GeminiTranslationError,
-    GeminiTranslator,
-    validate_gemini_model,
 )
 
 __version__ = "0.1.0"
@@ -34,21 +17,13 @@ __all__ = [
     "GeminiScore",
     "GeminiScoreResult",
     "get_performance_tier",
-    "LanguageInfo",
+    "GeminiEmbedder",
     "GeminiEmbeddings",
     "SentenceSimilarity",
-    "GeminiTranslator",
     "GeminiAuthError",
-    "GeminiTranslationError",
     "score",
     "compute",
-    "resolve_language",
-    "list_supported_languages",
-    "search_languages",
-    "is_supported_language",
-    "validate_gemini_model",
-    "DEFAULT_GEMINI_MODEL",
+    "DEFAULT_MODEL",
     "DEFAULT_EMBEDDING_MODEL",
-    "MINIMUM_GEMINI_VERSION",
     "__version__",
 ]

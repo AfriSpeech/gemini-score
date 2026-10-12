@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gemini-score"
 version = "0.1.0"
-description = "Semantic MT evaluation metric for African languages using Gemini back-translation and Gemini embeddings"
+description = "Semantic MT evaluation metric using Gemini multilingual text embeddings"
 readme = "README.md"
 authors = [
     { name = "Mich-Seth Owusu" }
@@ -16,10 +16,9 @@ keywords = [
     "evaluation",
     "gemini",
     "bleu",
-    "african-languages",
-    "nlp",
     "embeddings",
-    "sentence-similarity"
+    "sentence-similarity",
+    "multilingual"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -36,9 +35,8 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "numpy>=1.22.0",
     "google-genai>=0.1.1",
-    "afriso>=1.0.0",
+    "numpy>=1.22.0",
     "tqdm>=4.65.0",
 ]
 

@@ -3,49 +3,39 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
-**A semantic Machine Translation (MT) evaluation metric for African languages — an alternative to BLEU.**
+**A semantic Machine Translation (MT) evaluation metric using Google Gemini multilingual text embeddings.**
 
-`gemini-score` evaluates machine translation models translating into African languages (e.g., English &rarr; African language). Instead of relying on strict lexical n-gram overlap like BLEU, it works entirely via Google Gemini:
-1. Translates the generated African language text back to English using **Gemini Flash 3+** (`gemini-3.8-flash` by default).
-2. Computes semantic embeddings for both the translation and the reference English directly using the latest **Gemini Text Embedding model** (`gemini-embedding-001` by default).
-3. Computes semantic cosine similarity from the Gemini embeddings to produce a reliable, continuous score.
-4. Normalizes and validates 2,200+ African languages and dialects via [**afriso**](https://github.com/AfriSpeech/afriso).
+`gemini-score` evaluates machine translation models by directly comparing input pairs using Google Gemini's latest multilingual embedding model (`gemini-embedding-002` by default).
+
+Because Gemini's embedding model natively projects sentences across hundreds of languages into a shared cross-lingual semantic space, **no translation step, back-translation, or language-specific dictionaries are required**.
 
 ---
 
-## Why an alternative to BLEU for African MT?
+## Why an alternative to BLEU?
 
-- **Morphology and Diacritics**: Surface n-gram metrics (BLEU, SacreBLEU, chrF) severely penalize valid morphological variations, dialectal synonyms, and alternate diacritics/tone markings (e.g. Yoruba tone marks, Hausa hooked letters, Akan/Twi vowel harmony, Swahili agglutination).
-- **Single-Reference Bottleneck**: Most African MT benchmarks have only a single reference translation per sentence. If an MT model translates a valid synonym or rephrasing, BLEU assigns 0 n-gram overlap.
-- **Unified Gemini Pipeline**: No need to download heavy local transformer models or install separate sentence similarity libraries. A single Gemini API key powers both high-fidelity back-translation and state-of-the-art semantic embedding evaluation.
+- **Morphology and Diacritics**: Lexical overlap metrics (BLEU, SacreBLEU, chrF) heavily penalize morphological variations, dialectal synonyms, and alternate tone markings common in African and low-resource languages.
+- **Single-Reference Problem**: If an MT model translates a valid synonym or rephrasing, BLEU assigns 0 n-gram overlap.
+- **Pure Multilingual Semantic Space**: `gemini-score` measures semantic similarity directly in Gemini's multilingual embedding space—fast, language-agnostic, and zero local model bloat.
 
 ---
 
 ## Features
 
-- 🔑 **Zero Extra Models Needed**: Just provide your Gemini API key! Both translation and semantic embedding comparison run through Google Gemini with zero local model downloads.
-- ⚡ **Latest Gemini Models by Default**: Powered by `gemini-3.8-flash` for high-fidelity translation (enforcing Gemini Flash 3.0+ minimum) and `gemini-embedding-001` for semantic embedding similarity.
-- 🌍 **2,200+ African Languages**: Native integration with [AfriSpeech/afriso](https://github.com/AfriSpeech/afriso) supporting ISO 639-3 (`yor`, `swh`, `twi`, `hau`), ISO 639-1 (`yo`, `sw`, `ha`), English names, and endonyms/alternative names (`Yariba`, `Kiswahili`).
-- 📦 **Structured Batch Processing**: Batches translation requests into structured JSON prompts and batches embedding requests to minimize Gemini API calls, latency, and token costs.
-- 🔄 **Resilient & Concurrent**: Exponential backoff retry handling for API rate limits (`429` / quota), multithreaded worker execution, and automatic in-memory translation and embedding caching.
-- 🎯 **Multi-Reference Support**: Supports one or multiple reference translations per hypothesis (taking the maximum similarity across references).
-- 🛠️ **CLI & HF Evaluate Compatibility**: Full command-line tool (`gemini-score`), Python object-oriented API (`GeminiScore`), and Hugging Face `evaluate`-style functional API (`compute`).
+- 🔑 **Ultra-Simple**: No separate sentence similarity models, no local GPU/PyTorch dependencies, and no back-translation overhead. A single Gemini API key is all you need.
+- ⚡ **Latest Multilingual Embedding Model**: Uses `gemini-embedding-002` by default.
+- 🎯 **Cross-Lingual & Multi-Reference**: Directly compare hypothesis translations against English references, source sentences, or multiple references per sentence.
+- 📦 **Fast Batch Processing & Caching**: Batches requests to minimize API calls and automatically caches embeddings in memory.
+- 🛠️ **CLI & HF Evaluate Compatible**: Includes a full CLI tool (`gemini-score`), OOP API (`GeminiScore`), and Hugging Face `evaluate`-style functional API (`compute`).
 
 ---
 
 ## Installation
 
 ```bash
-# 1. Install afriso from GitHub
-pip install git+https://github.com/AfriSpeech/afriso.git
-
-# 2. Install gemini-score
-pip install -e .
-# Or with optional pandas support:
-pip install -e ".[pandas]"
+pip install gemini-score
 ```
 
-Set your Gemini API key in your environment:
+Set your Gemini API key:
 
 ```bash
 export GEMINI_API_KEY="your-gemini-api-key"
@@ -61,28 +51,24 @@ export GEMINI_API_KEY="your-gemini-api-key"
 ```python
 import gemini_score
 
-# Hypothesis predictions generated by your MT model (in Yoruba)
+# Hypothesis predictions generated by your MT model (any language)
 predictions = [
-    "Bawo ni gbogbo nkan se n lo loni?",
-    "E se pupo fun iranlowo re.",
+    "Bawo ni gbogbo nkan se n lo loni?",   # Yoruba
+    "Habari za asubuhi rafiki yangu.",     # Swahili
 ]
 
-# Source English / Reference English sentences
+# Reference translations (or source sentences in English)
 references = [
     "How is everything going today?",
-    "Thank you very much for your assistance.",
+    "Good morning my friend.",
 ]
 
 # Compute score
-result = gemini_score.score(
-    predictions=predictions,
-    references=references,
-    language="Yoruba",  # Accepts names ('Yoruba') or ISO codes ('yor', 'yo')
-)
+result = gemini_score.score(predictions, references)
 
 print(f"System Score: {result.score:.2f}%")
+print(f"Performance Tier: {result.tier} (Grade {result.grade})")
 print(f"Sentence Scores: {result.scores}")
-print(f"Gemini Translations: {result.translations}")
 print(result.summary())
 ```
 
@@ -93,39 +79,16 @@ from gemini_score import GeminiScore
 
 scorer = GeminiScore()
 
-predictions = ["Ologbo naa wa lori akete."]
+predictions = ["The automobile halted at the red signal."]
 references = [
-    ["A feline is sitting on the mat.", "The cat is on the rug."]
+    ["A bird flew over the sky.", "The car stopped at the traffic light."]
 ]
 
-result = scorer.score(predictions, references, language="yor")
+result = scorer.score(predictions, references)
 print("Score:", result.score)
 ```
 
-### 3. Multilingual Batches
-
-Evaluate multilingual datasets where each sentence is in a different African language:
-
-```python
-predictions = [
-    "Bawo ni o se wa?",          # Yoruba
-    "Habari za asubuhi rafiki.",  # Swahili
-    "Me da wo ase paa.",          # Twi
-]
-
-references = [
-    "How are you doing?",
-    "Good morning friend.",
-    "Thank you very much.",
-]
-
-languages = ["yor", "swh", "twi"]
-
-result = scorer.score(predictions, references, language=languages)
-print(result.to_dataframe())
-```
-
-### 4. Hugging Face `evaluate` Style
+### 3. Hugging Face `evaluate` Style
 
 ```python
 import gemini_score
@@ -133,22 +96,19 @@ import gemini_score
 output = gemini_score.compute(
     predictions=predictions,
     references=references,
-    language="Yoruba",
 )
-# Returns: {'gemini_score': 88.4, 'scores': [...], 'translations': [...]}
-print("Score:", output["gemini_score"])
+print("GeminiScore:", output["gemini_score"])
+print("Sentence Scores:", output["scores"])
 ```
 
 ---
 
 ## Command Line Interface (CLI)
 
-`gemini-score` includes a CLI for evaluating files, datasets, and looking up African languages.
-
 ### Evaluate from text files
 
 ```bash
-gemini-score --pred predictions.txt --ref references.txt --language Yoruba
+gemini-score --pred predictions.txt --ref references.txt
 ```
 
 ### Evaluate from CSV / JSON datasets
@@ -158,43 +118,20 @@ gemini-score \
   --file dataset.csv \
   --pred-col prediction \
   --ref-col reference \
-  --lang-col language \
   --output results.csv
 ```
 
 ### Output formats
 
 ```bash
-# Print summary table (default)
-gemini-score -p preds.txt -r refs.txt -l yor
+# Formatted summary (default)
+gemini-score -p preds.txt -r refs.txt
 
-# Output only the floating-point score (useful for bash scripts/pipelines)
-gemini-score -p preds.txt -r refs.txt -l yor --format score-only
+# Raw score only (for bash scripts)
+gemini-score -p preds.txt -r refs.txt --format score-only
 
-# Output full JSON with sample-level details
-gemini-score -p preds.txt -r refs.txt -l yor --format json
-```
-
-### African Language Utilities (`afriso`)
-
-```bash
-# List all 2,200+ African languages supported
-gemini-score --list-languages
-
-# View language metadata (ISO codes, countries, families, regions)
-gemini-score --info-language twi
-```
-
-Output:
-```text
-Language Name : Twi
-Prompt Name   : Twi
-ISO 639-3     : twi
-ISO 639-1     : tw
-Family        : Atlantic-Congo
-Regions       : West Africa
-Countries     : GH, TG
-Is African    : True
+# Detailed JSON report
+gemini-score -p preds.txt -r refs.txt --format json
 ```
 
 ---
@@ -203,49 +140,23 @@ Is African    : True
 
 ### 1. Aggregation Mechanism
 
-When evaluating a test set with multiple sentences, `gemini-score` processes each sample and aggregates them into a comprehensive system report:
-
-1. **Sentence-Level Scoring**: For each sample $i$, the African candidate prediction $H_i$ is back-translated into English $T_i$ using Gemini Flash 3+. Gemini text embeddings encode $T_i$ and the reference $R_i$, computing cosine similarity:
-   $$s_i = \max_{j} \cos(\mathbf{e}(T_i), \mathbf{e}(R_{i, j})) \times 100$$
-2. **System-Level Aggregation**: The final overall score is the arithmetic mean across all $N$ evaluated sentences:
+1. **Sentence-Level Scoring**: For each sample $i$, Gemini multilingual embeddings encode the hypothesis prediction $P_i$ and reference $R_i$, computing cosine similarity:
+   $$s_i = \max_{j} \cos(\mathbf{e}(P_i), \mathbf{e}(R_{i, j})) \times 100$$
+2. **System-Level Aggregation**: The final overall score is the arithmetic mean across all evaluated sentences:
    $$\text{Final GeminiScore} = \frac{1}{N} \sum_{i=1}^N s_i$$
-   The evaluator also computes the **median**, **standard deviation**, **min**, and **max** scores to measure model consistency across the dataset.
-3. **Multilingual Breakdown (`result.by_language()`)**:
-   If your dataset contains multiple African languages (e.g., evaluating an MT model across Yoruba, Swahili, and Twi simultaneously), `gemini-score` computes both the global aggregate score and an automatic per-language score breakdown:
-   ```python
-   breakdown = result.by_language()
-   # {'Yoruba': {'count': 100, 'score': 82.4, 'tier': 'Good', 'grade': 'B'}, ...}
-   ```
+   The result also provides **median**, **standard deviation**, **min**, and **max** metrics.
 
 ---
 
 ### 2. Score Interpretation & Performance Categories
 
-Unlike BLEU—where morphologically complex African languages often artificially score between 10–30 even for high-quality human translations—`gemini-score` reflects true semantic preservation on a standard percentage scale ($0.0 - 100.0\%$).
-
-Use this reference table to evaluate your model's performance:
-
 | GeminiScore Range | Grade | Performance Tier | Interpretation & Model Translation Quality |
 |:---:|:---:|:---|:---|
-| **85.0 – 100.0%** | **A** | **Excellent (Near-Human)** | **High-fidelity translation.** Full semantic meaning, entities, nuances, and logical flow are preserved with high precision. Output is fluent and publication-ready. |
-| **70.0 – 84.9%** | **B** | **Good (High Quality)** | **High semantic quality.** Core meaning and intent are accurately conveyed with minor stylistic rephrasings, acceptable synonyms, or slight lexical shifts that do not distort the facts. |
-| **55.0 – 69.9%** | **C** | **Moderate (Understandable)** | **Adequate / Gist-clear translation.** The general idea is understandable to a reader, but secondary clauses, technical terms, or nuanced morphological features may be imprecise, awkward, or omitted. |
-| **40.0 – 54.9%** | **D** | **Poor (Fragmentary)** | **Significant semantic drift.** Only disconnected keywords or isolated fragments are correctly captured; substantial grammatical breakdown, missing predicates, or mistranslated entities. |
-| **< 40.0%** | **F** | **Severely Deficient (Unusable)** | **Unusable translation.** Original meaning is lost, contradictory, stuck in repetitive token loops, or completely hallucinated. |
-
-#### Programmatic Access to Performance Tiers
-
-```python
-# Access aggregate tier & grade
-print(result.score)            # 86.4
-print(result.tier)             # 'Excellent'
-print(result.grade)            # 'A'
-print(result.tier_description) # 'High-fidelity translation...'
-
-# Inspect per-sample tiers
-for item in result:
-    print(f"{item['score']:.1f}% [{item['tier']}]: {item['translation']}")
-```
+| **85.0 – 100.0%** | **A** | **Excellent (Near-Human)** | **High-fidelity match.** Full semantic meaning, entities, nuance, and logic are preserved with high precision. |
+| **70.0 – 84.9%** | **B** | **Good (High Quality)** | **High semantic quality.** Core meaning and intent are accurately conveyed with minor stylistic rephrasings or acceptable synonyms. |
+| **55.0 – 69.9%** | **C** | **Moderate (Understandable)** | **Adequate / Gist-clear.** The general idea is clear, but secondary clauses, technical terms, or nuanced grammatical forms may be imprecise or awkward. |
+| **40.0 – 54.9%** | **D** | **Poor (Fragmentary)** | **Significant semantic drift.** Only disconnected keywords or isolated fragments match; substantial information loss or mistranslations. |
+| **< 40.0%** | **F** | **Severely Deficient (Unusable)** | **Unusable translation.** Original meaning is lost, contradictory, or completely hallucinated. |
 
 ---
 
@@ -253,13 +164,11 @@ for item in result:
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | str | `"gemini-3.8-flash"` | Gemini model used for translation (requires Gemini Flash 3.0+; cannot go below version 3.0). Can also be set via `GEMINI_MODEL` env var. |
-| `embedding_model` | str | `"gemini-embedding-002"` | Latest Gemini text embedding model used for semantic similarity. Can also be set via `GEMINI_EMBEDDING_MODEL` env var. (Supports `gemini-embedding-002`, `gemini-embedding-001`, `text-embedding-004`, etc.) |
+| `model` | str | `"gemini-embedding-002"` | Gemini embedding model identifier. Can also be set via `GEMINI_MODEL` or `GEMINI_EMBEDDING_MODEL` env var. |
 | `scale` | str | `"percent"` | Scoring scale: `"percent"` (`0.0` - `100.0`), `"unit"` (`0.0` - `1.0`), or `"raw"` (`-1.0` - `1.0`). |
-| `batch_size` | int | `16` | Number of sentences per structured prompt call. |
-| `max_workers` | int | `4` | Worker threads for concurrent translation calls. |
+| `batch_size` | int | `64` | Batch size per embed request. |
 | `max_retries` | int | `4` | Retries on rate limits (`429`) with exponential backoff. |
-| `enable_cache` | bool | `True` | Caches translations and embeddings in memory to prevent duplicate API requests. |
+| `enable_cache` | bool | `True` | Caches sentence embeddings in memory to prevent duplicate API requests. |
 
 ---
 
@@ -277,4 +186,4 @@ pytest -v tests/
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-African language metadata is provided via [afriso](https://github.com/AfriSpeech/afriso) (CC-BY 4.0 / SIL ISO 639-3).
+Multilingual embeddings powered by Google Gemini.

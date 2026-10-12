@@ -5,41 +5,30 @@ import json
 import os
 import pytest
 from gemini_score.cli import main
+from gemini_score.similarity import _pseudo_embed
 
 
 def make_mock_client():
-    def mock_client(prompt, is_json=False):
-        if is_json:
-            return '["The cat is on the mat."]'
-        return "The cat is on the mat."
+    def mock_embed(texts, is_embed=True):
+        return [_pseudo_embed(t) for t in texts]
 
-    return mock_client
+    return mock_embed
 
 
-def test_cli_list_languages(capsys):
-    ret = main(["--list-languages"])
-    assert ret == 0
-    captured = capsys.readouterr()
-    assert "Total African languages supported via afriso:" in captured.out
-    assert "Yoruba" in captured.out
-
-
-def test_cli_info_language(capsys):
-    ret = main(["--info-language", "yor"])
-    assert ret == 0
-    captured = capsys.readouterr()
-    assert "Language Name : Yoruba" in captured.out
-    assert "ISO 639-3     : yor" in captured.out
+def test_cli_version(capsys):
+    try:
+        main(["--version"])
+    except SystemExit as exc:
+        assert exc.code == 0
 
 
 def test_cli_text_files(tmp_path, monkeypatch, capsys):
     pred_path = tmp_path / "preds.txt"
     ref_path = tmp_path / "refs.txt"
 
-    pred_path.write_text("Ologbo naa wa lori akete.\n", encoding="utf-8")
+    pred_path.write_text("The cat is on the mat.\n", encoding="utf-8")
     ref_path.write_text("The cat is on the mat.\n", encoding="utf-8")
 
-    # Mock GeminiScore to use mock client
     from gemini_score import core
 
     original_init = core.GeminiScore.__init__
@@ -53,13 +42,12 @@ def test_cli_text_files(tmp_path, monkeypatch, capsys):
     ret = main([
         "--pred", str(pred_path),
         "--ref", str(ref_path),
-        "--language", "Yoruba",
         "--format", "score-only"
     ])
     assert ret == 0
     captured = capsys.readouterr()
     score = float(captured.out.strip())
-    assert score > 90.0
+    assert score >= 99.0
 
 
 def test_cli_csv_file(tmp_path, monkeypatch, capsys):
@@ -68,8 +56,8 @@ def test_cli_csv_file(tmp_path, monkeypatch, capsys):
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["prediction", "reference", "language"])
-        writer.writerow(["Ologbo naa wa lori akete.", "The cat is on the mat.", "yor"])
+        writer.writerow(["prediction", "reference"])
+        writer.writerow(["The cat is on the mat.", "The cat is on the mat."])
 
     from gemini_score import core
 
@@ -83,7 +71,6 @@ def test_cli_csv_file(tmp_path, monkeypatch, capsys):
 
     ret = main([
         "--file", str(csv_path),
-        "--lang-col", "language",
         "--output", str(out_path),
         "--format", "json"
     ])
@@ -92,14 +79,14 @@ def test_cli_csv_file(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     data = json.loads(captured.out)
     assert "score" in data
-    assert data["score"] > 90.0
+    assert data["score"] >= 99.0
 
 
 def test_cli_json_file(tmp_path, monkeypatch, capsys):
     json_path = tmp_path / "data.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump([
-            {"pred": "Ologbo naa wa lori akete.", "ref": "The cat is on the mat."}
+            {"pred": "The cat is on the mat.", "ref": "The cat is on the mat."}
         ], f)
 
     from gemini_score import core
@@ -116,10 +103,14 @@ def test_cli_json_file(tmp_path, monkeypatch, capsys):
         "--file", str(json_path),
         "--pred-col", "pred",
         "--ref-col", "ref",
-        "--language", "yor",
         "--format", "score-only"
     ])
     assert ret == 0
     captured = capsys.readouterr()
     score = float(captured.out.strip())
-    assert score > 90.0
+    assert score >= 99.0
+
+
+def test_cli_missing_args(capsys):
+    ret = main([])
+    assert ret == 1

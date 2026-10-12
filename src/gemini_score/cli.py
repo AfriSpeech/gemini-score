@@ -10,9 +10,7 @@ from typing import List, Optional
 
 from . import __version__
 from .core import GeminiScore
-from .languages import is_supported_language, list_supported_languages, resolve_language
-from .similarity import DEFAULT_EMBEDDING_MODEL
-from .translator import DEFAULT_GEMINI_MODEL, GeminiAuthError
+from .similarity import DEFAULT_MODEL, GeminiAuthError
 
 
 def _load_lines_from_file(path: str) -> List[str]:
@@ -27,16 +25,13 @@ def _load_from_tabular(
     path: str,
     pred_col: str = "prediction",
     ref_col: str = "reference",
-    lang_col: Optional[str] = None,
-) -> tuple[List[str], List[str], Optional[List[str]]]:
-    """Reads predictions, references, and optional language from CSV or JSON file."""
+) -> tuple[List[str], List[str]]:
+    """Reads predictions and references from a CSV or JSON file."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"File not found: {path}")
 
     predictions: List[str] = []
     references: List[str] = []
-    languages: Optional[List[str]] = [] if lang_col else None
-
     ext = os.path.splitext(path)[1].lower()
 
     if ext == ".csv":
@@ -47,8 +42,6 @@ def _load_from_tabular(
             for row in reader:
                 predictions.append(row.get(pred_col, ""))
                 references.append(row.get(ref_col, ""))
-                if languages is not None and lang_col:
-                    languages.append(row.get(lang_col, ""))
     elif ext in (".json", ".jsonl"):
         with open(path, "r", encoding="utf-8") as f:
             if ext == ".jsonl":
@@ -58,27 +51,21 @@ def _load_from_tabular(
                     item = json.loads(line)
                     predictions.append(item.get(pred_col, ""))
                     references.append(item.get(ref_col, ""))
-                    if languages is not None and lang_col:
-                        languages.append(item.get(lang_col, ""))
             else:
                 data = json.load(f)
                 if isinstance(data, list):
                     for item in data:
                         predictions.append(item.get(pred_col, ""))
                         references.append(item.get(ref_col, ""))
-                        if languages is not None and lang_col:
-                            languages.append(item.get(lang_col, ""))
                 elif isinstance(data, dict):
                     preds = data.get(pred_col, [])
                     refs = data.get(ref_col, [])
                     predictions.extend([str(p) for p in preds])
                     references.extend([str(r) for r in refs])
-                    if languages is not None and lang_col:
-                        languages.extend([str(l) for l in data.get(lang_col, [])])
     else:
         raise ValueError(f"Unsupported tabular file extension: {ext}. Use .csv, .json, or .jsonl")
 
-    return predictions, references, languages
+    return predictions, references
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,8 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gemini-score",
         description=(
-            "GeminiScore: Semantic MT evaluation metric for African languages "
-            "using Gemini back-translation and Gemini text embeddings."
+            "GeminiScore: Semantic MT evaluation metric using Google Gemini "
+            "multilingual text embeddings."
         ),
     )
 
@@ -103,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--ref",
         "-r",
         dest="references_file",
-        help="Path to text file containing English references (one per line).",
+        help="Path to text file containing references (one per line).",
     )
     input_group.add_argument(
         "--file",
@@ -121,30 +108,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="reference",
         help="Column/key name for references in tabular file (default: 'reference').",
     )
-    input_group.add_argument(
-        "--lang-col",
-        default=None,
-        help="Optional column/key name for language in tabular file.",
-    )
-    input_group.add_argument(
-        "--language",
-        "-l",
-        dest="language",
-        help="African language name or ISO code (e.g. 'yor', 'swh', 'twi', 'Yoruba').",
-    )
 
-    # Scorer options
+    # Configuration options
     config_group = parser.add_argument_group("Model and Evaluation Configuration")
     config_group.add_argument(
         "--model",
         "-m",
-        default=DEFAULT_GEMINI_MODEL,
-        help=f"Gemini translation model identifier (default: {DEFAULT_GEMINI_MODEL}, requires Flash 3.0+).",
-    )
-    config_group.add_argument(
-        "--embedding-model",
-        default=DEFAULT_EMBEDDING_MODEL,
-        help=f"Gemini text embedding model (default: {DEFAULT_EMBEDDING_MODEL}).",
+        default=DEFAULT_MODEL,
+        help=f"Gemini embedding model identifier (default: {DEFAULT_MODEL}).",
     )
     config_group.add_argument(
         "--scale",
@@ -155,14 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
     config_group.add_argument(
         "--batch-size",
         type=int,
-        default=16,
-        help="Batch size for structured Gemini prompt translations (default: 16).",
-    )
-    config_group.add_argument(
-        "--workers",
-        type=int,
-        default=4,
-        help="Number of concurrent translation worker threads (default: 4).",
+        default=64,
+        help="Batch size for embedding requests (default: 64).",
     )
     config_group.add_argument(
         "--api-key",
@@ -182,19 +147,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="summary",
         help="Terminal output format: 'summary' (default), 'json', or 'score-only'.",
     )
-
-    # Language utility options
-    info_group = parser.add_argument_group("Language Utilities (afriso)")
-    info_group.add_argument(
-        "--list-languages",
-        action="store_true",
-        help="List all supported African languages in the afriso database.",
-    )
-    info_group.add_argument(
-        "--info-language",
-        metavar="LANG",
-        help="Look up and display metadata for a specific African language.",
-    )
     parser.add_argument(
         "--version",
         "-v",
@@ -210,39 +162,15 @@ def main(args: Optional[List[str]] = None) -> int:
     parser = build_parser()
     parsed_args = parser.parse_args(args)
 
-    # 1. Utility: List languages
-    if parsed_args.list_languages:
-        langs = list_supported_languages()
-        print(f"Total African languages supported via afriso: {len(langs)}")
-        for l in sorted(langs):
-            print(f"  - {l}")
-        return 0
-
-    # 2. Utility: Look up specific language
-    if parsed_args.info_language:
-        info = resolve_language(parsed_args.info_language)
-        print(f"Language Name : {info.name}")
-        print(f"Prompt Name   : {info.prompt_name}")
-        print(f"ISO 639-3     : {info.iso639_3}")
-        print(f"ISO 639-1     : {info.iso639_1}")
-        print(f"Family        : {info.family}")
-        print(f"Regions       : {', '.join(info.regions) if info.regions else 'N/A'}")
-        print(f"Countries     : {', '.join(info.countries) if info.countries else 'N/A'}")
-        print(f"Is African    : {info.is_african}")
-        return 0
-
-    # 3. Load inputs
     predictions: List[str] = []
     references: List[str] = []
-    languages: Optional[List[str]] = None
 
     if parsed_args.input_file:
         try:
-            predictions, references, languages = _load_from_tabular(
+            predictions, references = _load_from_tabular(
                 parsed_args.input_file,
                 pred_col=parsed_args.pred_col,
                 ref_col=parsed_args.ref_col,
-                lang_col=parsed_args.lang_col,
             )
         except Exception as exc:
             print(f"Error loading tabular file: {exc}", file=sys.stderr)
@@ -262,15 +190,6 @@ def main(args: Optional[List[str]] = None) -> int:
         )
         return 1
 
-    # Validate language
-    active_language = languages if (languages and len(languages) > 0) else parsed_args.language
-    if not active_language:
-        print(
-            "Error: Language must be specified using --language/-l or --lang-col in the dataset.",
-            file=sys.stderr,
-        )
-        return 1
-
     if len(predictions) != len(references):
         print(
             f"Error: Number of predictions ({len(predictions)}) does not match "
@@ -279,15 +198,12 @@ def main(args: Optional[List[str]] = None) -> int:
         )
         return 1
 
-    # Initialize evaluator
     try:
         scorer = GeminiScore(
             api_key=parsed_args.api_key,
             model=parsed_args.model,
-            embedding_model=parsed_args.embedding_model,
             scale=parsed_args.scale,
             batch_size=parsed_args.batch_size,
-            max_workers=parsed_args.workers,
         )
     except GeminiAuthError as auth_err:
         print(f"Authentication Error: {auth_err}", file=sys.stderr)
@@ -296,18 +212,15 @@ def main(args: Optional[List[str]] = None) -> int:
         print(f"Initialization Error: {exc}", file=sys.stderr)
         return 1
 
-    # Execute scoring
     try:
         result = scorer.score(
             predictions=predictions,
             references=references,
-            language=active_language,
         )
     except Exception as exc:
         print(f"Evaluation Error: {exc}", file=sys.stderr)
         return 1
 
-    # Print output
     if parsed_args.format == "score-only":
         print(f"{result.score:.4f}")
     elif parsed_args.format == "json":
@@ -315,7 +228,6 @@ def main(args: Optional[List[str]] = None) -> int:
     else:
         print(result.summary())
 
-    # Save to file if requested
     if parsed_args.output:
         out_ext = os.path.splitext(parsed_args.output)[1].lower()
         try:

@@ -1,4 +1,4 @@
-"""Semantic sentence similarity using Google Gemini text embeddings."""
+"""Semantic sentence similarity using Gemini multilingual text embeddings."""
 
 from __future__ import annotations
 
@@ -11,8 +11,16 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Default latest Gemini text embedding model
-DEFAULT_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-002")
+# Default latest Gemini multilingual text embedding model
+DEFAULT_MODEL = os.environ.get(
+    "GEMINI_MODEL",
+    os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-002"),
+)
+DEFAULT_EMBEDDING_MODEL = DEFAULT_MODEL
+
+
+class GeminiAuthError(ValueError):
+    """Raised when no valid Gemini API key is found."""
 
 
 def _pseudo_embed(text: str, dim: int = 64) -> np.ndarray:
@@ -28,34 +36,35 @@ def _pseudo_embed(text: str, dim: int = 64) -> np.ndarray:
     return vec / (norm + 1e-9)
 
 
-class GeminiEmbeddings:
-    """Computes semantic sentence embeddings using the Google Gemini Embeddings API.
+class GeminiEmbedder:
+    """Computes semantic multilingual embeddings using Google Gemini's Embedding API.
 
-    Defaults to the latest 'gemini-embedding-002' model.
+    Directly embeds cross-lingual input pairs into Gemini's shared multilingual vector
+    space, allowing direct semantic similarity calculation without translation overhead.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = DEFAULT_EMBEDDING_MODEL,
+        model: str = DEFAULT_MODEL,
         batch_size: int = 64,
         max_retries: int = 4,
         backoff_factor: float = 2.0,
         enable_cache: bool = True,
         client: Optional[Any] = None,
     ) -> None:
-        """Initializes Gemini embeddings.
+        """Initializes the Gemini embedder.
 
         Parameters
         ----------
         api_key: str, optional
-            Gemini API key. Defaults to GEMINI_API_KEY / GOOGLE_API_KEY from environment.
+            Gemini API key. Defaults to GEMINI_API_KEY or GOOGLE_API_KEY from environment.
         model: str
             Gemini embedding model (default: 'gemini-embedding-002').
         batch_size: int
             Number of sentences per embed_content request.
         max_retries: int
-            Retry attempts on transient / rate limit errors.
+            Maximum retry attempts on transient / rate limit errors.
         backoff_factor: float
             Exponential backoff factor for retries.
         enable_cache: bool
@@ -79,11 +88,9 @@ class GeminiEmbeddings:
                 or os.environ.get("GOOGLE_API_KEY")
             )
             if not resolved_key:
-                from .translator import GeminiAuthError
-
                 raise GeminiAuthError(
-                    "No Gemini API key found for embeddings. Please set GEMINI_API_KEY "
-                    "(or GOOGLE_API_KEY) in the environment, or pass `api_key='...'`."
+                    "No Gemini API key found. Please set GEMINI_API_KEY (or GOOGLE_API_KEY) "
+                    "in your environment, or pass `api_key='...'`."
                 )
             self.client = self._init_client(resolved_key)
 
@@ -177,7 +184,7 @@ class GeminiEmbeddings:
         batch_size: Optional[int] = None,
         normalize: bool = True,
     ) -> np.ndarray:
-        """Generates embeddings for a list of texts using Gemini Embeddings API.
+        """Generates multilingual embeddings for a sequence of texts.
 
         Parameters
         ----------
@@ -238,18 +245,18 @@ class GeminiEmbeddings:
 
     def compute_similarity(
         self,
-        translations: Sequence[str],
+        predictions: Sequence[str],
         references: Sequence[Union[str, Sequence[str]]],
         scale: str = "percent",
     ) -> np.ndarray:
-        """Computes cosine similarity between translations and references.
+        """Computes semantic cosine similarity between predictions and references.
 
         Parameters
         ----------
-        translations: Sequence[str]
-            Generated / back-translated English sentences.
+        predictions: Sequence[str]
+            Target hypothesis translations.
         references: Sequence[str | Sequence[str]]
-            Reference English sentences (single or multiple per sample).
+            Reference translations (or source texts). Supports multiple references.
         scale: str
             Output scale: 'percent' (0-100, default), 'unit' (0-1), or 'raw' (-1 to 1).
 
@@ -258,24 +265,24 @@ class GeminiEmbeddings:
         np.ndarray
             Per-sample similarity scores.
         """
-        n = len(translations)
+        n = len(predictions)
         if n == 0:
             return np.empty((0,), dtype=np.float32)
 
         if len(references) != n:
             raise ValueError(
-                f"Mismatch: {n} translations provided but {len(references)} references given."
+                f"Mismatch: {n} predictions provided but {len(references)} references given."
             )
 
         is_multi_ref = any(isinstance(r, (list, tuple)) for r in references)
 
         if not is_multi_ref:
             ref_list = [str(r) for r in references]
-            t_embs = self.encode(translations, normalize=True)
+            p_embs = self.encode(predictions, normalize=True)
             r_embs = self.encode(ref_list, normalize=True)
-            scores = np.sum(t_embs * r_embs, axis=1)
+            scores = np.sum(p_embs * r_embs, axis=1)
         else:
-            t_embs = self.encode(translations, normalize=True)
+            p_embs = self.encode(predictions, normalize=True)
             ref_slices: list[slice] = []
             flat_refs: list[str] = []
             for r in references:
@@ -293,7 +300,7 @@ class GeminiEmbeddings:
             scores = np.zeros(n, dtype=np.float32)
             for i, sl in enumerate(ref_slices):
                 sample_r = flat_r_embs[sl]
-                sims = np.dot(sample_r, t_embs[i])
+                sims = np.dot(sample_r, p_embs[i])
                 scores[i] = float(np.max(sims)) if len(sims) > 0 else 0.0
 
         return self._scale_scores(scores, scale=scale)
@@ -315,5 +322,6 @@ class GeminiEmbeddings:
             )
 
 
-# Alias SentenceSimilarity to GeminiEmbeddings
-SentenceSimilarity = GeminiEmbeddings
+# Backward-compatibility aliases
+GeminiEmbeddings = GeminiEmbedder
+SentenceSimilarity = GeminiEmbedder
