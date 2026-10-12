@@ -128,7 +128,7 @@ def test_result_methods():
     assert d["score"] == res.score
     j = res.to_json()
     assert isinstance(j, str)
-    assert "gemini-2.5-flash" in j
+    assert "gemini-3.8-flash" in j
 
     # to_dataframe
     df = res.to_dataframe()

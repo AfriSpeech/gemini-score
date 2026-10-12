@@ -47,7 +47,7 @@ class GeminiScore:
         api_key: str, optional
             Gemini API key. Defaults to GEMINI_API_KEY / GOOGLE_API_KEY from environment.
         model: str
-            Gemini model name (e.g. 'gemini-2.5-flash').
+            Gemini model name (default: 'gemini-3.8-flash'). Requires Gemini Flash 3.0+.
         similarity_model: str
             Model2Vec static embedding model name or path.
             Defaults to 'minishlab/M2V_base_output' (distilled BGE-base-en-v1.5).
@@ -64,7 +64,6 @@ class GeminiScore:
         client: Any, optional
             Pre-configured GenAI client or mock client.
         """
-        self.model = model
         self.similarity_model_name = similarity_model
         self.scale = scale
 
@@ -77,6 +76,7 @@ class GeminiScore:
             enable_cache=enable_cache,
             client=client,
         )
+        self.model = self.translator.model
         self.similarity_engine = SentenceSimilarity.get_instance(model_name=similarity_model)
 
     def score(

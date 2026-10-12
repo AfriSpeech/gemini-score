@@ -17,9 +17,11 @@ from .models import GeminiScoreResult, get_performance_tier
 from .similarity import DEFAULT_SIMILARITY_MODEL, SentenceSimilarity
 from .translator import (
     DEFAULT_GEMINI_MODEL,
+    MINIMUM_GEMINI_VERSION,
     GeminiAuthError,
     GeminiTranslationError,
     GeminiTranslator,
+    validate_gemini_model,
 )
 
 __version__ = "0.1.0"
@@ -39,7 +41,9 @@ __all__ = [
     "list_supported_languages",
     "search_languages",
     "is_supported_language",
+    "validate_gemini_model",
     "DEFAULT_GEMINI_MODEL",
+    "MINIMUM_GEMINI_VERSION",
     "DEFAULT_SIMILARITY_MODEL",
     "__version__",
 ]

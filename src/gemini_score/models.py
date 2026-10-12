@@ -97,7 +97,7 @@ class GeminiScoreResult:
     translations: List[str]
     languages: List[str]
     scale: str = "percent"
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.8-flash"
     similarity_model: str = "minishlab/M2V_base_output"
 
     def __len__(self) -> int:

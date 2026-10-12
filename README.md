@@ -251,7 +251,7 @@ for item in result:
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | str | `"gemini-2.5-flash"` | Gemini model used for translation. Can also be set via `GEMINI_MODEL` env var. |
+| `model` | str | `"gemini-3.8-flash"` | Gemini model used for translation (requires Gemini Flash 3.0+; cannot go below version 3.0). Can also be set via `GEMINI_MODEL` env var. |
 | `similarity_model` | str | `"minishlab/M2V_base_output"` | Static Model2Vec embedding model. (Distilled from `BAAI/bge-base-en-v1.5`). Other options: `minishlab/potion-base-8M`, `minishlab/potion-base-32M`. |
 | `scale` | str | `"percent"` | Scoring scale: `"percent"` (`0.0` - `100.0`), `"unit"` (`0.0` - `1.0`), or `"raw"` (`-1.0` - `1.0`). |
 | `batch_size` | int | `16` | Number of sentences per structured prompt call. |

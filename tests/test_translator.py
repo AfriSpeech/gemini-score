@@ -128,3 +128,32 @@ def test_retry_on_rate_limit():
     res = translator.translate_single("Bawo ni", "yor")
     assert res == "Recovered after retry"
     assert attempts == 2
+
+
+def test_gemini_model_validation():
+    from gemini_score.translator import validate_gemini_model
+
+    # Valid Flash 3+ models
+    assert validate_gemini_model("gemini-3.8-flash") == "gemini-3.8-flash"
+    assert validate_gemini_model("gemini-3.0-flash") == "gemini-3.0-flash"
+    assert validate_gemini_model("gemini-3-flash") == "gemini-3-flash"
+    assert validate_gemini_model("models/gemini-3.8-flash") == "models/gemini-3.8-flash"
+    assert validate_gemini_model("gemini-4.0-flash") == "gemini-4.0-flash"
+
+    # Reject versions below 3.0
+    with pytest.raises(ValueError, match="below the minimum supported version 3.0"):
+        validate_gemini_model("gemini-2.5-flash")
+
+    with pytest.raises(ValueError, match="below the minimum supported version 3.0"):
+        validate_gemini_model("gemini-2.0-flash")
+
+    with pytest.raises(ValueError, match="below the minimum supported version 3.0"):
+        validate_gemini_model("gemini-1.5-flash")
+
+    # Reject non-flash models
+    with pytest.raises(ValueError, match="not a Flash variant"):
+        validate_gemini_model("gemini-3.8-pro")
+
+    # Reject invalid model name format
+    with pytest.raises(ValueError, match="Invalid Gemini model"):
+        validate_gemini_model("gpt-4o")

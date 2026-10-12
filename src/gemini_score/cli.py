@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         "-m",
         default=DEFAULT_GEMINI_MODEL,
-        help=f"Gemini model identifier (default: {DEFAULT_GEMINI_MODEL}).",
+        help=f"Gemini model identifier (default: {DEFAULT_GEMINI_MODEL}, requires Flash 3.0+).",
     )
     config_group.add_argument(
         "--similarity-model",

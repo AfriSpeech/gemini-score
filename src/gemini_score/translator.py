@@ -14,8 +14,11 @@ from .languages import LanguageInfo, resolve_language
 
 logger = logging.getLogger(__name__)
 
-# Default Gemini model
-DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+# Minimum supported Gemini version (requires Flash 3.0+)
+MINIMUM_GEMINI_VERSION = 3.0
+
+# Default Gemini model: latest Gemini Flash 3+ model
+DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
 
 
 class GeminiAuthError(ValueError):
@@ -24,6 +27,48 @@ class GeminiAuthError(ValueError):
 
 class GeminiTranslationError(RuntimeError):
     """Raised when translation fails after all retry attempts."""
+
+
+def validate_gemini_model(model: str) -> str:
+    """Validates that the Gemini model is a Flash model of version 3.0 or higher.
+
+    Parameters
+    ----------
+    model: str
+        Gemini model identifier (e.g. 'gemini-3.8-flash').
+
+    Returns
+    -------
+    str
+        Cleaned model string if valid.
+
+    Raises
+    ------
+    ValueError
+        If the model is not a Flash model or has version < 3.0.
+    """
+    cleaned = model.strip()
+    match = re.search(r"gemini[^\d]*(\d+(?:\.\d+)?)", cleaned, re.IGNORECASE)
+    if not match:
+        raise ValueError(
+            f"Invalid Gemini model '{model}'. GeminiScore requires Gemini Flash 3.0 or higher "
+            f"(e.g., '{DEFAULT_GEMINI_MODEL}')."
+        )
+
+    version = float(match.group(1))
+    if version < MINIMUM_GEMINI_VERSION:
+        raise ValueError(
+            f"GeminiScore requires Gemini Flash 3.0 or higher. Model '{model}' (version {version}) "
+            f"is below the minimum supported version {MINIMUM_GEMINI_VERSION}+."
+        )
+
+    if "flash" not in cleaned.lower():
+        raise ValueError(
+            f"GeminiScore requires a Gemini Flash model for speed and efficiency. "
+            f"Model '{model}' is not a Flash variant."
+        )
+
+    return cleaned
 
 
 def _clean_json_response(text: str) -> Optional[List[str]]:
@@ -78,7 +123,8 @@ class GeminiTranslator:
         api_key: str, optional
             Gemini API key. Defaults to GEMINI_API_KEY or GOOGLE_API_KEY from environment.
         model: str
-            Gemini model name. Defaults to 'gemini-2.5-flash' (or env GEMINI_MODEL).
+            Gemini model name. Defaults to 'gemini-3.8-flash' (or env GEMINI_MODEL).
+            Requires Gemini Flash 3.0 or higher.
         batch_size: int
             Number of sentences per structured prompt call.
         max_workers: int
@@ -92,7 +138,7 @@ class GeminiTranslator:
         client: Any, optional
             Pre-configured GenAI client instance (useful for testing and dependency injection).
         """
-        self.model = model
+        self.model = validate_gemini_model(model)
         self.batch_size = max(1, batch_size)
         self.max_workers = max(1, max_workers)
         self.max_retries = max(0, max_retries)
