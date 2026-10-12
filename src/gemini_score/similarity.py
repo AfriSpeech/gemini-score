@@ -1,4 +1,4 @@
-"""Semantic sentence similarity using Gemini text embeddings (and optional Model2Vec fallback)."""
+"""Semantic sentence similarity using Google Gemini text embeddings."""
 
 from __future__ import annotations
 
@@ -12,13 +12,11 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Default latest Gemini text embedding model
-DEFAULT_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
-# Legacy / alternative static Model2Vec model
-DEFAULT_SIMILARITY_MODEL = "minishlab/M2V_base_output"
+DEFAULT_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-002")
 
 
 def _pseudo_embed(text: str, dim: int = 64) -> np.ndarray:
-    """Deterministic hash-based embedding for testing/offline mocking."""
+    """Deterministic hash-based pseudo embedding for offline testing / mock clients."""
     vec = np.zeros(dim, dtype=np.float32)
     words = text.lower().split()
     if not words:
@@ -31,10 +29,9 @@ def _pseudo_embed(text: str, dim: int = 64) -> np.ndarray:
 
 
 class GeminiEmbeddings:
-    """Computes semantic sentence embeddings directly using the Google Gemini Embeddings API.
+    """Computes semantic sentence embeddings using the Google Gemini Embeddings API.
 
-    By default, uses the latest 'gemini-embedding-001' model, eliminating the need
-    for separate local transformer or embedding downloads.
+    Defaults to the latest 'gemini-embedding-002' model.
     """
 
     def __init__(
@@ -54,7 +51,7 @@ class GeminiEmbeddings:
         api_key: str, optional
             Gemini API key. Defaults to GEMINI_API_KEY / GOOGLE_API_KEY from environment.
         model: str
-            Gemini embedding model (default: 'gemini-embedding-001').
+            Gemini embedding model (default: 'gemini-embedding-002').
         batch_size: int
             Number of sentences per embed_content request.
         max_retries: int
@@ -64,7 +61,7 @@ class GeminiEmbeddings:
         enable_cache: bool
             Whether to cache sentence embeddings in memory.
         client: Any, optional
-            Existing Google GenAI client instance.
+            Pre-configured Google GenAI client instance.
         """
         self.model = model
         self.batch_size = max(1, batch_size)
@@ -85,8 +82,8 @@ class GeminiEmbeddings:
                 from .translator import GeminiAuthError
 
                 raise GeminiAuthError(
-                    "No Gemini API key found for embeddings. Please set the GEMINI_API_KEY "
-                    "(or GOOGLE_API_KEY) environment variable, or pass `api_key='...'`."
+                    "No Gemini API key found for embeddings. Please set GEMINI_API_KEY "
+                    "(or GOOGLE_API_KEY) in the environment, or pass `api_key='...'`."
                 )
             self.client = self._init_client(resolved_key)
 
@@ -119,7 +116,6 @@ class GeminiEmbeddings:
                         model=self.model,
                         contents=texts,
                     )
-                    # Extract vectors
                     vectors: List[np.ndarray] = []
                     for item in response.embeddings:
                         vals = getattr(item, "values", item)
@@ -135,7 +131,7 @@ class GeminiEmbeddings:
                     raw_embs = response.get("embedding", [])
                     return [np.asarray(v, dtype=np.float32) for v in raw_embs]
 
-                # Mock or callable handler
+                # Mock / callable client
                 elif callable(self.client):
                     import inspect
                     sig = inspect.signature(self.client)
@@ -145,7 +141,6 @@ class GeminiEmbeddings:
                         res = self.client(texts, is_embed=True)
                         return [np.asarray(v, dtype=np.float32) for v in res]
                     else:
-                        # Fallback for translation-only mock callables
                         return [_pseudo_embed(t) for t in texts]
 
                 raise TypeError(f"Unrecognized client for embeddings: {type(self.client)}")
@@ -206,10 +201,8 @@ class GeminiEmbeddings:
         results: List[Optional[np.ndarray]] = [None] * len(cleaned)
         uncached_indices: List[int] = []
 
-        # Check cache
         for i, text in enumerate(cleaned):
             if not text.strip():
-                # For empty text, we can use a zero vector placeholder once probed
                 uncached_indices.append(i)
             elif self.enable_cache and text in self._cache:
                 results[i] = self._cache[text]
@@ -222,7 +215,6 @@ class GeminiEmbeddings:
                 chunk_indices = uncached_indices[start : start + bs]
                 chunk_texts = uncached_texts[start : start + bs]
 
-                # Map non-empty vs empty texts
                 valid_chunk_texts = [t if t.strip() else " " for t in chunk_texts]
                 raw_vectors = self._call_embed(valid_chunk_texts)
 
@@ -323,82 +315,5 @@ class GeminiEmbeddings:
             )
 
 
-# Alias GeminiEmbeddings as the primary sentence similarity engine
+# Alias SentenceSimilarity to GeminiEmbeddings
 SentenceSimilarity = GeminiEmbeddings
-
-
-class Model2VecSimilarity:
-    """Optional CPU-only static embedding similarity engine using Model2Vec."""
-
-    def __init__(self, model_name: str = DEFAULT_SIMILARITY_MODEL) -> None:
-        try:
-            from model2vec import StaticModel
-        except ImportError:
-            raise ImportError(
-                "model2vec is required when using Model2VecSimilarity. "
-                "Install it using `pip install model2vec`."
-            )
-        self.model_name = model_name
-        self.model = StaticModel.from_pretrained(model_name)
-        probe = self.model.encode(["probe"])
-        self.dim = int(probe.shape[1])
-
-    def encode(self, texts: Sequence[str], batch_size: int = 256, normalize: bool = True) -> np.ndarray:
-        if not texts:
-            return np.empty((0, self.dim), dtype=np.float32)
-        cleaned = [str(t) if t is not None else "" for t in texts]
-        if len(cleaned) <= batch_size:
-            embeddings = self.model.encode(list(cleaned))
-        else:
-            chunks = []
-            for i in range(0, len(cleaned), batch_size):
-                chunk = cleaned[i : i + batch_size]
-                chunks.append(self.model.encode(list(chunk)))
-            embeddings = np.concatenate(chunks, axis=0)
-        embeddings = np.asarray(embeddings, dtype=np.float32)
-        if normalize:
-            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-            zero_mask = norms < 1e-9
-            norms = np.where(zero_mask, 1.0, norms)
-            embeddings = embeddings / norms
-            embeddings[zero_mask.squeeze(1)] = 0.0
-        return embeddings
-
-    def compute_similarity(
-        self,
-        translations: Sequence[str],
-        references: Sequence[Union[str, Sequence[str]]],
-        scale: str = "percent",
-    ) -> np.ndarray:
-        n = len(translations)
-        if n == 0:
-            return np.empty((0,), dtype=np.float32)
-        if len(references) != n:
-            raise ValueError(f"Mismatch: {n} translations but {len(references)} references given.")
-        is_multi_ref = any(isinstance(r, (list, tuple)) for r in references)
-        if not is_multi_ref:
-            ref_list = [str(r) for r in references]
-            t_embs = self.encode(translations, normalize=True)
-            r_embs = self.encode(ref_list, normalize=True)
-            scores = np.sum(t_embs * r_embs, axis=1)
-        else:
-            t_embs = self.encode(translations, normalize=True)
-            ref_slices: list[slice] = []
-            flat_refs: list[str] = []
-            for r in references:
-                if isinstance(r, (list, tuple)):
-                    r_strs = [str(item) for item in r]
-                    start = len(flat_refs)
-                    flat_refs.extend(r_strs if r_strs else [""])
-                    ref_slices.append(slice(start, len(flat_refs)))
-                else:
-                    start = len(flat_refs)
-                    flat_refs.append(str(r))
-                    ref_slices.append(slice(start, len(flat_refs)))
-            flat_r_embs = self.encode(flat_refs, normalize=True)
-            scores = np.zeros(n, dtype=np.float32)
-            for i, sl in enumerate(ref_slices):
-                sample_r = flat_r_embs[sl]
-                sims = np.dot(sample_r, t_embs[i])
-                scores[i] = float(np.max(sims)) if len(sims) > 0 else 0.0
-        return GeminiEmbeddings._scale_scores(scores, scale=scale)

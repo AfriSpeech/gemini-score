@@ -86,8 +86,8 @@ class GeminiScoreResult:
         Scoring scale ('percent', 'unit', or 'raw').
     model: str
         Gemini model identifier used for translation.
-    similarity_model: str
-        Model2Vec static embedding model used for similarity.
+    embedding_model: str
+        Gemini text embedding model used for semantic similarity.
     """
 
     score: float
@@ -98,7 +98,7 @@ class GeminiScoreResult:
     languages: List[str]
     scale: str = "percent"
     model: str = "gemini-3.8-flash"
-    embedding_model: str = "gemini-embedding-001"
+    embedding_model: str = "gemini-embedding-002"
     similarity_model: Optional[str] = None
 
     def __post_init__(self) -> None:

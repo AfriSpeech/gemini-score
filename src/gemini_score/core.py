@@ -9,13 +9,7 @@ import numpy as np
 
 from .languages import LanguageInfo, resolve_language
 from .models import GeminiScoreResult
-from .similarity import (
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_SIMILARITY_MODEL,
-    GeminiEmbeddings,
-    Model2VecSimilarity,
-    SentenceSimilarity,
-)
+from .similarity import DEFAULT_EMBEDDING_MODEL, GeminiEmbeddings
 from .translator import DEFAULT_GEMINI_MODEL, GeminiTranslator
 
 logger = logging.getLogger(__name__)
@@ -27,10 +21,9 @@ class GeminiScore:
     It works entirely through Google Gemini API:
     1. Translating candidate African language text to English using Gemini Flash 3+ (default: 'gemini-3.8-flash').
     2. Measuring semantic similarity between the back-translated English and the reference
-       English using the latest Gemini text embedding model (default: 'gemini-embedding-001').
+       English using the latest Gemini text embedding model (default: 'gemini-embedding-002').
 
-    This provides a semantically grounded, robust alternative to surface n-gram overlap
-    metrics like BLEU, with zero need to download or configure separate local embedding models.
+    This provides a clean, unified evaluation metric with zero local models or extra bloat.
     """
 
     def __init__(
@@ -44,7 +37,6 @@ class GeminiScore:
         max_retries: int = 4,
         enable_cache: bool = True,
         client: Optional[Any] = None,
-        similarity_model: Optional[str] = None,
     ) -> None:
         """Initializes the GeminiScore evaluator.
 
@@ -53,9 +45,9 @@ class GeminiScore:
         api_key: str, optional
             Gemini API key. Defaults to GEMINI_API_KEY / GOOGLE_API_KEY from environment.
         model: str
-            Gemini model name (default: 'gemini-3.8-flash'). Requires Gemini Flash 3.0+.
+            Gemini translation model name (default: 'gemini-3.8-flash'). Requires Flash 3.0+.
         embedding_model: str
-            Gemini text embedding model (default: 'gemini-embedding-001').
+            Gemini text embedding model (default: 'gemini-embedding-002').
         scale: str
             Output scoring scale: 'percent' (0-100, default), 'unit' (0-1), or 'raw' (-1 to 1).
         batch_size: int
@@ -68,12 +60,8 @@ class GeminiScore:
             Whether to cache translations and embeddings in memory.
         client: Any, optional
             Pre-configured GenAI client or mock client.
-        similarity_model: str, optional
-            Optional local Model2Vec model name (e.g. 'minishlab/M2V_base_output') if
-            wishing to use local static embeddings instead of Gemini embeddings.
         """
         self.embedding_model = embedding_model
-        self.similarity_model_name = similarity_model
         self.scale = scale
 
         # Shared translator instance
@@ -88,16 +76,13 @@ class GeminiScore:
         )
         self.model = self.translator.model
 
-        # Similarity engine: use local Model2Vec if explicitly requested, otherwise Gemini Embeddings
-        if similarity_model is not None:
-            self.similarity_engine = Model2VecSimilarity(model_name=similarity_model)
-        else:
-            self.similarity_engine = GeminiEmbeddings(
-                client=self.translator.client,
-                model=embedding_model,
-                max_retries=max_retries,
-                enable_cache=enable_cache,
-            )
+        # Gemini embeddings similarity engine
+        self.similarity_engine = GeminiEmbeddings(
+            client=self.translator.client,
+            model=embedding_model,
+            max_retries=max_retries,
+            enable_cache=enable_cache,
+        )
 
     def score(
         self,
@@ -143,7 +128,6 @@ class GeminiScore:
                 scale=scale or self.scale,
                 model=self.model,
                 embedding_model=self.embedding_model,
-                similarity_model=self.similarity_model_name or self.embedding_model,
             )
 
         # Normalize references to a list
@@ -203,7 +187,6 @@ class GeminiScore:
             scale=active_scale,
             model=self.model,
             embedding_model=self.embedding_model,
-            similarity_model=self.similarity_model_name or self.embedding_model,
         )
 
     def compute(
@@ -239,7 +222,6 @@ def score(
     max_workers: int = 4,
     enable_cache: bool = True,
     client: Optional[Any] = None,
-    similarity_model: Optional[str] = None,
 ) -> GeminiScoreResult:
     """Convenience functional interface to evaluate machine translations.
 
@@ -256,7 +238,7 @@ def score(
     model: str
         Gemini model name (default: 'gemini-3.8-flash'). Requires Flash 3.0+.
     embedding_model: str
-        Gemini embedding model (default: 'gemini-embedding-001').
+        Gemini embedding model (default: 'gemini-embedding-002').
     scale: str
         Scoring scale ('percent', 'unit', 'raw').
     batch_size: int
@@ -267,8 +249,6 @@ def score(
         Whether to cache translations.
     client: Any, optional
         Pre-configured or mock GenAI client.
-    similarity_model: str, optional
-        Optional local Model2Vec model.
 
     Returns
     -------
@@ -283,7 +263,6 @@ def score(
         max_workers=max_workers,
         enable_cache=enable_cache,
         client=client,
-        similarity_model=similarity_model,
     )
     return scorer.score(
         predictions=predictions,

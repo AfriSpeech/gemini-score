@@ -11,7 +11,7 @@ from typing import List, Optional
 from . import __version__
 from .core import GeminiScore
 from .languages import is_supported_language, list_supported_languages, resolve_language
-from .similarity import DEFAULT_EMBEDDING_MODEL, DEFAULT_SIMILARITY_MODEL
+from .similarity import DEFAULT_EMBEDDING_MODEL
 from .translator import DEFAULT_GEMINI_MODEL, GeminiAuthError
 
 
@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="gemini-score",
         description=(
             "GeminiScore: Semantic MT evaluation metric for African languages "
-            "using Gemini back-translation and static Model2Vec sentence similarity."
+            "using Gemini back-translation and Gemini text embeddings."
         ),
     )
 
@@ -139,17 +139,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         "-m",
         default=DEFAULT_GEMINI_MODEL,
-        help=f"Gemini model identifier (default: {DEFAULT_GEMINI_MODEL}, requires Flash 3.0+).",
+        help=f"Gemini translation model identifier (default: {DEFAULT_GEMINI_MODEL}, requires Flash 3.0+).",
     )
     config_group.add_argument(
         "--embedding-model",
         default=DEFAULT_EMBEDDING_MODEL,
         help=f"Gemini text embedding model (default: {DEFAULT_EMBEDDING_MODEL}).",
-    )
-    config_group.add_argument(
-        "--similarity-model",
-        default=None,
-        help="Optional local Model2Vec model (e.g. minishlab/M2V_base_output) for offline similarity.",
     )
     config_group.add_argument(
         "--scale",
@@ -290,7 +285,6 @@ def main(args: Optional[List[str]] = None) -> int:
             api_key=parsed_args.api_key,
             model=parsed_args.model,
             embedding_model=parsed_args.embedding_model,
-            similarity_model=parsed_args.similarity_model,
             scale=parsed_args.scale,
             batch_size=parsed_args.batch_size,
             max_workers=parsed_args.workers,

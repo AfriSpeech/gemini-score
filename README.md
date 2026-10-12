@@ -205,7 +205,7 @@ Is African    : True
 
 When evaluating a test set with multiple sentences, `gemini-score` processes each sample and aggregates them into a comprehensive system report:
 
-1. **Sentence-Level Scoring**: For each sample $i$, the African candidate prediction $H_i$ is back-translated into English $T_i$ using Gemini. Model2Vec static BGE embeddings encode $T_i$ and the reference $R_i$, computing cosine similarity:
+1. **Sentence-Level Scoring**: For each sample $i$, the African candidate prediction $H_i$ is back-translated into English $T_i$ using Gemini Flash 3+. Gemini text embeddings encode $T_i$ and the reference $R_i$, computing cosine similarity:
    $$s_i = \max_{j} \cos(\mathbf{e}(T_i), \mathbf{e}(R_{i, j})) \times 100$$
 2. **System-Level Aggregation**: The final overall score is the arithmetic mean across all $N$ evaluated sentences:
    $$\text{Final GeminiScore} = \frac{1}{N} \sum_{i=1}^N s_i$$
@@ -254,13 +254,12 @@ for item in result:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `model` | str | `"gemini-3.8-flash"` | Gemini model used for translation (requires Gemini Flash 3.0+; cannot go below version 3.0). Can also be set via `GEMINI_MODEL` env var. |
-| `embedding_model` | str | `"gemini-embedding-001"` | Latest Gemini text embedding model used for semantic similarity. Can also be set via `GEMINI_EMBEDDING_MODEL` env var. (Supports `gemini-embedding-001`, `text-embedding-004`, etc.) |
+| `embedding_model` | str | `"gemini-embedding-002"` | Latest Gemini text embedding model used for semantic similarity. Can also be set via `GEMINI_EMBEDDING_MODEL` env var. (Supports `gemini-embedding-002`, `gemini-embedding-001`, `text-embedding-004`, etc.) |
 | `scale` | str | `"percent"` | Scoring scale: `"percent"` (`0.0` - `100.0`), `"unit"` (`0.0` - `1.0`), or `"raw"` (`-1.0` - `1.0`). |
 | `batch_size` | int | `16` | Number of sentences per structured prompt call. |
 | `max_workers` | int | `4` | Worker threads for concurrent translation calls. |
 | `max_retries` | int | `4` | Retries on rate limits (`429`) with exponential backoff. |
 | `enable_cache` | bool | `True` | Caches translations and embeddings in memory to prevent duplicate API requests. |
-| `similarity_model` | str (optional) | `None` | Optional local Model2Vec model (e.g. `"minishlab/M2V_base_output"`) if you want offline CPU static embeddings instead of Gemini embeddings. |
 
 ---
 
@@ -279,4 +278,3 @@ pytest -v tests/
 
 This project is licensed under the [MIT License](LICENSE).
 African language metadata is provided via [afriso](https://github.com/AfriSpeech/afriso) (CC-BY 4.0 / SIL ISO 639-3).
-Static embeddings powered by [Model2Vec](https://github.com/MinishLab/model2vec).

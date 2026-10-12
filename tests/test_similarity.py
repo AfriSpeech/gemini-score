@@ -1,12 +1,10 @@
-"""Tests for GeminiEmbeddings and Model2VecSimilarity engines."""
+"""Tests for GeminiEmbeddings semantic sentence similarity engine."""
 
 import numpy as np
 import pytest
 from gemini_score.similarity import (
     DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_SIMILARITY_MODEL,
     GeminiEmbeddings,
-    Model2VecSimilarity,
     _pseudo_embed,
 )
 
@@ -20,15 +18,11 @@ def make_mock_embedding_client():
 
 @pytest.fixture(scope="module")
 def gemini_engine():
-    return GeminiEmbeddings(client=make_mock_embedding_client(), model="gemini-embedding-001")
+    return GeminiEmbeddings(client=make_mock_embedding_client(), model="gemini-embedding-002")
 
 
-@pytest.fixture(scope="module")
-def model2vec_engine():
-    return Model2VecSimilarity(DEFAULT_SIMILARITY_MODEL)
-
-
-# --- Tests for GeminiEmbeddings (Default) ---
+def test_gemini_embeddings_default_model():
+    assert DEFAULT_EMBEDDING_MODEL == "gemini-embedding-002"
 
 
 def test_gemini_embeddings_encode_empty(gemini_engine):
@@ -93,18 +87,3 @@ def test_gemini_embeddings_multi_reference(gemini_engine):
 def test_gemini_embeddings_mismatched_lengths(gemini_engine):
     with pytest.raises(ValueError, match="Mismatch"):
         gemini_engine.compute_similarity(["A", "B"], ["A"])
-
-
-# --- Tests for Model2VecSimilarity (Optional Fallback) ---
-
-
-def test_model2vec_initialization(model2vec_engine):
-    assert model2vec_engine.dim > 0
-    assert model2vec_engine.model_name == DEFAULT_SIMILARITY_MODEL
-
-
-def test_model2vec_encode_and_similarity(model2vec_engine):
-    t = ["The cat sat on the mat."]
-    r = ["The cat sat on the mat."]
-    scores = model2vec_engine.compute_similarity(t, r, scale="percent")
-    assert scores[0] >= 99.0
