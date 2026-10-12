@@ -11,7 +11,7 @@ from typing import List, Optional
 from . import __version__
 from .core import GeminiScore
 from .languages import is_supported_language, list_supported_languages, resolve_language
-from .similarity import DEFAULT_SIMILARITY_MODEL
+from .similarity import DEFAULT_EMBEDDING_MODEL, DEFAULT_SIMILARITY_MODEL
 from .translator import DEFAULT_GEMINI_MODEL, GeminiAuthError
 
 
@@ -142,9 +142,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Gemini model identifier (default: {DEFAULT_GEMINI_MODEL}, requires Flash 3.0+).",
     )
     config_group.add_argument(
+        "--embedding-model",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help=f"Gemini text embedding model (default: {DEFAULT_EMBEDDING_MODEL}).",
+    )
+    config_group.add_argument(
         "--similarity-model",
-        default=DEFAULT_SIMILARITY_MODEL,
-        help=f"Model2Vec static embedding model (default: {DEFAULT_SIMILARITY_MODEL}).",
+        default=None,
+        help="Optional local Model2Vec model (e.g. minishlab/M2V_base_output) for offline similarity.",
     )
     config_group.add_argument(
         "--scale",
@@ -284,6 +289,7 @@ def main(args: Optional[List[str]] = None) -> int:
         scorer = GeminiScore(
             api_key=parsed_args.api_key,
             model=parsed_args.model,
+            embedding_model=parsed_args.embedding_model,
             similarity_model=parsed_args.similarity_model,
             scale=parsed_args.scale,
             batch_size=parsed_args.batch_size,

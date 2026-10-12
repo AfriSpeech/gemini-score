@@ -5,10 +5,11 @@
 
 **A semantic Machine Translation (MT) evaluation metric for African languages — an alternative to BLEU.**
 
-`gemini-score` evaluates machine translation models translating into African languages (e.g., English &rarr; African language). Instead of relying on strict lexical n-gram overlap like BLEU, it:
-1. Translates the generated African language text back to English using **Google Gemini**.
-2. Evaluates semantic similarity between the back-translation and the reference English text using an ultra-fast CPU-optimized static sentence embedding model via [**Model2Vec**](https://github.com/MinishLab/model2vec) (distilled [BGE](https://huggingface.co/BAAI/bge-base-en-v1.5) by default).
-3. Normalizes and validates 2,200+ African languages and dialects via [**afriso**](https://github.com/AfriSpeech/afriso).
+`gemini-score` evaluates machine translation models translating into African languages (e.g., English &rarr; African language). Instead of relying on strict lexical n-gram overlap like BLEU, it works entirely via Google Gemini:
+1. Translates the generated African language text back to English using **Gemini Flash 3+** (`gemini-3.8-flash` by default).
+2. Computes semantic embeddings for both the translation and the reference English directly using the latest **Gemini Text Embedding model** (`gemini-embedding-001` by default).
+3. Computes semantic cosine similarity from the Gemini embeddings to produce a reliable, continuous score.
+4. Normalizes and validates 2,200+ African languages and dialects via [**afriso**](https://github.com/AfriSpeech/afriso).
 
 ---
 
@@ -16,16 +17,17 @@
 
 - **Morphology and Diacritics**: Surface n-gram metrics (BLEU, SacreBLEU, chrF) severely penalize valid morphological variations, dialectal synonyms, and alternate diacritics/tone markings (e.g. Yoruba tone marks, Hausa hooked letters, Akan/Twi vowel harmony, Swahili agglutination).
 - **Single-Reference Bottleneck**: Most African MT benchmarks have only a single reference translation per sentence. If an MT model translates a valid synonym or rephrasing, BLEU assigns 0 n-gram overlap.
-- **Semantic Grounding**: By leveraging Gemini's strong cross-lingual translation into English combined with Model2Vec static BGE embeddings, `gemini-score` captures true semantic preservation without requiring GPU clusters.
+- **Unified Gemini Pipeline**: No need to download heavy local transformer models or install separate sentence similarity libraries. A single Gemini API key powers both high-fidelity back-translation and state-of-the-art semantic embedding evaluation.
 
 ---
 
 ## Features
 
+- 🔑 **Zero Extra Models Needed**: Just provide your Gemini API key! Both translation and semantic embedding comparison run through Google Gemini with zero local model downloads.
+- ⚡ **Latest Gemini Models by Default**: Powered by `gemini-3.8-flash` for high-fidelity translation (enforcing Gemini Flash 3.0+ minimum) and `gemini-embedding-001` for semantic embedding similarity.
 - 🌍 **2,200+ African Languages**: Native integration with [AfriSpeech/afriso](https://github.com/AfriSpeech/afriso) supporting ISO 639-3 (`yor`, `swh`, `twi`, `hau`), ISO 639-1 (`yo`, `sw`, `ha`), English names, and endonyms/alternative names (`Yariba`, `Kiswahili`).
-- ⚡ **Ultra-Fast CPU Sentence Similarity**: Uses static Model2Vec (`minishlab/M2V_base_output` distilled from BGE-base-en-v1.5). Encodes hundreds of sentences per second on CPU with no PyTorch or GPU requirement.
-- 📦 **Structured Batch Translation**: Batches sentences into structured JSON prompts to minimize Gemini API calls, drastically cutting latency and token costs.
-- 🔄 **Resilient & Concurrent**: Exponential backoff retry handling for API rate limits (`429` / quota), multithreaded worker execution, and automatic in-memory translation caching.
+- 📦 **Structured Batch Processing**: Batches translation requests into structured JSON prompts and batches embedding requests to minimize Gemini API calls, latency, and token costs.
+- 🔄 **Resilient & Concurrent**: Exponential backoff retry handling for API rate limits (`429` / quota), multithreaded worker execution, and automatic in-memory translation and embedding caching.
 - 🎯 **Multi-Reference Support**: Supports one or multiple reference translations per hypothesis (taking the maximum similarity across references).
 - 🛠️ **CLI & HF Evaluate Compatibility**: Full command-line tool (`gemini-score`), Python object-oriented API (`GeminiScore`), and Hugging Face `evaluate`-style functional API (`compute`).
 
@@ -252,12 +254,13 @@ for item in result:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `model` | str | `"gemini-3.8-flash"` | Gemini model used for translation (requires Gemini Flash 3.0+; cannot go below version 3.0). Can also be set via `GEMINI_MODEL` env var. |
-| `similarity_model` | str | `"minishlab/M2V_base_output"` | Static Model2Vec embedding model. (Distilled from `BAAI/bge-base-en-v1.5`). Other options: `minishlab/potion-base-8M`, `minishlab/potion-base-32M`. |
+| `embedding_model` | str | `"gemini-embedding-001"` | Latest Gemini text embedding model used for semantic similarity. Can also be set via `GEMINI_EMBEDDING_MODEL` env var. (Supports `gemini-embedding-001`, `text-embedding-004`, etc.) |
 | `scale` | str | `"percent"` | Scoring scale: `"percent"` (`0.0` - `100.0`), `"unit"` (`0.0` - `1.0`), or `"raw"` (`-1.0` - `1.0`). |
 | `batch_size` | int | `16` | Number of sentences per structured prompt call. |
 | `max_workers` | int | `4` | Worker threads for concurrent translation calls. |
 | `max_retries` | int | `4` | Retries on rate limits (`429`) with exponential backoff. |
-| `enable_cache` | bool | `True` | Caches translations in memory to prevent duplicate API requests. |
+| `enable_cache` | bool | `True` | Caches translations and embeddings in memory to prevent duplicate API requests. |
+| `similarity_model` | str (optional) | `None` | Optional local Model2Vec model (e.g. `"minishlab/M2V_base_output"`) if you want offline CPU static embeddings instead of Gemini embeddings. |
 
 ---
 

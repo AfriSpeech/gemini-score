@@ -98,7 +98,12 @@ class GeminiScoreResult:
     languages: List[str]
     scale: str = "percent"
     model: str = "gemini-3.8-flash"
-    similarity_model: str = "minishlab/M2V_base_output"
+    embedding_model: str = "gemini-embedding-001"
+    similarity_model: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.similarity_model is None:
+            self.similarity_model = self.embedding_model
 
     def __len__(self) -> int:
         return len(self.scores)
@@ -160,7 +165,7 @@ class GeminiScoreResult:
             f"num_samples={len(self.scores)}, "
             f"scale='{self.scale}', "
             f"model='{self.model}', "
-            f"similarity_model='{self.similarity_model}')"
+            f"embedding_model='{self.embedding_model}')"
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -177,6 +182,7 @@ class GeminiScoreResult:
             "languages": self.languages,
             "scale": self.scale,
             "model": self.model,
+            "embedding_model": self.embedding_model,
             "similarity_model": self.similarity_model,
         }
         unique_langs = set(self.languages)
@@ -232,8 +238,8 @@ class GeminiScoreResult:
             f"Std Deviation          : {float(np.std(arr)):.2f}",
             f"Min Score              : {float(np.min(arr)):.2f}{unit_sym}",
             f"Max Score              : {float(np.max(arr)):.2f}{unit_sym}",
-            f"Gemini Model           : {self.model}",
-            f"Similarity Model       : {self.similarity_model}",
+            f"Translation Model      : {self.model}",
+            f"Embedding Model        : {self.embedding_model}",
             f"Scale                  : {self.scale}",
         ]
 

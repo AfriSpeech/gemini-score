@@ -14,7 +14,13 @@ from .languages import (
     search_languages,
 )
 from .models import GeminiScoreResult, get_performance_tier
-from .similarity import DEFAULT_SIMILARITY_MODEL, SentenceSimilarity
+from .similarity import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_SIMILARITY_MODEL,
+    GeminiEmbeddings,
+    Model2VecSimilarity,
+    SentenceSimilarity,
+)
 from .translator import (
     DEFAULT_GEMINI_MODEL,
     MINIMUM_GEMINI_VERSION,
@@ -31,7 +37,9 @@ __all__ = [
     "GeminiScoreResult",
     "get_performance_tier",
     "LanguageInfo",
+    "GeminiEmbeddings",
     "SentenceSimilarity",
+    "Model2VecSimilarity",
     "GeminiTranslator",
     "GeminiAuthError",
     "GeminiTranslationError",
@@ -43,6 +51,7 @@ __all__ = [
     "is_supported_language",
     "validate_gemini_model",
     "DEFAULT_GEMINI_MODEL",
+    "DEFAULT_EMBEDDING_MODEL",
     "MINIMUM_GEMINI_VERSION",
     "DEFAULT_SIMILARITY_MODEL",
     "__version__",

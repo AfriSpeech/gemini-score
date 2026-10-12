@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gemini-score"
 version = "0.1.0"
-description = "Semantic MT evaluation metric for African languages using Gemini back-translation and static Model2Vec sentence similarity"
+description = "Semantic MT evaluation metric for African languages using Gemini back-translation and Gemini embeddings"
 readme = "README.md"
 authors = [
     { name = "Mich-Seth Owusu" }
@@ -18,7 +18,7 @@ keywords = [
     "bleu",
     "african-languages",
     "nlp",
-    "model2vec",
+    "embeddings",
     "sentence-similarity"
 ]
 classifiers = [
@@ -36,7 +36,6 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "model2vec>=0.9.0",
     "numpy>=1.22.0",
     "google-genai>=0.1.1",
     "afriso>=1.0.0",
@@ -44,6 +43,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+model2vec = [
+    "model2vec>=0.9.0",
+]
 pandas = [
     "pandas>=1.3.0",
 ]
@@ -52,6 +54,7 @@ dev = [
     "pytest-mock>=3.10.0",
     "pytest-cov>=4.0.0",
     "pandas>=1.3.0",
+    "model2vec>=0.9.0",
 ]
 
 [project.scripts]
