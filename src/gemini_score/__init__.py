@@ -13,7 +13,7 @@ from .languages import (
     resolve_language,
     search_languages,
 )
-from .models import GeminiScoreResult
+from .models import GeminiScoreResult, get_performance_tier
 from .similarity import DEFAULT_SIMILARITY_MODEL, SentenceSimilarity
 from .translator import (
     DEFAULT_GEMINI_MODEL,
@@ -27,6 +27,7 @@ __version__ = "0.1.0"
 __all__ = [
     "GeminiScore",
     "GeminiScoreResult",
+    "get_performance_tier",
     "LanguageInfo",
     "SentenceSimilarity",
     "GeminiTranslator",

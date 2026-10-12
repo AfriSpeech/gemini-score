@@ -139,4 +139,47 @@ def test_result_methods():
     # summary
     summary = res.summary()
     assert "GeminiScore Evaluation Summary" in summary
-    assert "System Score" in summary
+    assert "Final Aggregated Score" in summary
+    assert "Performance Tier" in summary
+    assert res.tier in ["Excellent", "Good", "Moderate", "Poor", "Severely Deficient"]
+
+
+def test_performance_tiers_and_multilingual_breakdown():
+    from gemini_score import get_performance_tier
+
+    t1 = get_performance_tier(95.0, scale="percent")
+    assert t1["tier"] == "Excellent"
+    assert t1["grade"] == "A"
+
+    t2 = get_performance_tier(75.0, scale="percent")
+    assert t2["tier"] == "Good"
+    assert t2["grade"] == "B"
+
+    t3 = get_performance_tier(60.0, scale="percent")
+    assert t3["tier"] == "Moderate"
+
+    t4 = get_performance_tier(45.0, scale="percent")
+    assert t4["tier"] == "Poor"
+
+    t5 = get_performance_tier(20.0, scale="percent")
+    assert t5["tier"] == "Severely Deficient"
+
+    # Multilingual aggregation test
+    def multi_client(prompt, is_json=False):
+        if is_json:
+            return '["Good morning", "Thank you"]'
+        return "Good morning"
+
+    scorer = GeminiScore(client=multi_client)
+    res = scorer.score(
+        predictions=["E kaaro", "Asante sana"],
+        references=["Good morning", "Thank you very much"],
+        language=["yor", "swh"],
+    )
+
+    by_lang = res.by_language()
+    assert "Yoruba" in by_lang
+    assert "Swahili" in by_lang
+    assert by_lang["Yoruba"]["count"] == 1
+    assert by_lang["Swahili"]["count"] == 1
+    assert "Language Breakdown:" in res.summary()

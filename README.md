@@ -197,6 +197,56 @@ Is African    : True
 
 ---
 
+## How GeminiScore Aggregates & Interprets Scores
+
+### 1. Aggregation Mechanism
+
+When evaluating a test set with multiple sentences, `gemini-score` processes each sample and aggregates them into a comprehensive system report:
+
+1. **Sentence-Level Scoring**: For each sample $i$, the African candidate prediction $H_i$ is back-translated into English $T_i$ using Gemini. Model2Vec static BGE embeddings encode $T_i$ and the reference $R_i$, computing cosine similarity:
+   $$s_i = \max_{j} \cos(\mathbf{e}(T_i), \mathbf{e}(R_{i, j})) \times 100$$
+2. **System-Level Aggregation**: The final overall score is the arithmetic mean across all $N$ evaluated sentences:
+   $$\text{Final GeminiScore} = \frac{1}{N} \sum_{i=1}^N s_i$$
+   The evaluator also computes the **median**, **standard deviation**, **min**, and **max** scores to measure model consistency across the dataset.
+3. **Multilingual Breakdown (`result.by_language()`)**:
+   If your dataset contains multiple African languages (e.g., evaluating an MT model across Yoruba, Swahili, and Twi simultaneously), `gemini-score` computes both the global aggregate score and an automatic per-language score breakdown:
+   ```python
+   breakdown = result.by_language()
+   # {'Yoruba': {'count': 100, 'score': 82.4, 'tier': 'Good', 'grade': 'B'}, ...}
+   ```
+
+---
+
+### 2. Score Interpretation & Performance Categories
+
+Unlike BLEU—where morphologically complex African languages often artificially score between 10–30 even for high-quality human translations—`gemini-score` reflects true semantic preservation on a standard percentage scale ($0.0 - 100.0\%$).
+
+Use this reference table to evaluate your model's performance:
+
+| GeminiScore Range | Grade | Performance Tier | Interpretation & Model Translation Quality |
+|:---:|:---:|:---|:---|
+| **85.0 – 100.0%** | **A** | **Excellent (Near-Human)** | **High-fidelity translation.** Full semantic meaning, entities, nuances, and logical flow are preserved with high precision. Output is fluent and publication-ready. |
+| **70.0 – 84.9%** | **B** | **Good (High Quality)** | **High semantic quality.** Core meaning and intent are accurately conveyed with minor stylistic rephrasings, acceptable synonyms, or slight lexical shifts that do not distort the facts. |
+| **55.0 – 69.9%** | **C** | **Moderate (Understandable)** | **Adequate / Gist-clear translation.** The general idea is understandable to a reader, but secondary clauses, technical terms, or nuanced morphological features may be imprecise, awkward, or omitted. |
+| **40.0 – 54.9%** | **D** | **Poor (Fragmentary)** | **Significant semantic drift.** Only disconnected keywords or isolated fragments are correctly captured; substantial grammatical breakdown, missing predicates, or mistranslated entities. |
+| **< 40.0%** | **F** | **Severely Deficient (Unusable)** | **Unusable translation.** Original meaning is lost, contradictory, stuck in repetitive token loops, or completely hallucinated. |
+
+#### Programmatic Access to Performance Tiers
+
+```python
+# Access aggregate tier & grade
+print(result.score)            # 86.4
+print(result.tier)             # 'Excellent'
+print(result.grade)            # 'A'
+print(result.tier_description) # 'High-fidelity translation...'
+
+# Inspect per-sample tiers
+for item in result:
+    print(f"{item['score']:.1f}% [{item['tier']}]: {item['translation']}")
+```
+
+---
+
 ## Configuration Reference
 
 | Parameter | Type | Default | Description |

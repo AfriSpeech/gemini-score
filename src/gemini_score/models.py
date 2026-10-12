@@ -1,10 +1,67 @@
-"""Data structures and results for GeminiScore."""
+"""Data structures, aggregations, and performance tiers for GeminiScore."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional, Sequence, Union
+
+
+def get_performance_tier(score: float, scale: str = "percent") -> Dict[str, str]:
+    """Maps a GeminiScore to its qualitative performance tier and explanation.
+
+    Parameters
+    ----------
+    score: float
+        Aggregate or sentence-level GeminiScore.
+    scale: str
+        Scale used ('percent', 'unit', or 'raw').
+
+    Returns
+    -------
+    dict
+        Dictionary containing 'tier', 'grade', and 'description'.
+    """
+    scale_lower = scale.lower()
+    if scale_lower == "percent":
+        pct = score
+    elif scale_lower == "unit":
+        pct = score * 100.0
+    elif scale_lower == "raw":
+        pct = max(0.0, score) * 100.0
+    else:
+        pct = score
+
+    if pct >= 85.0:
+        return {
+            "tier": "Excellent",
+            "grade": "A",
+            "description": "High-fidelity translation. Full semantic meaning, entities, and nuances are preserved with high precision.",
+        }
+    elif pct >= 70.0:
+        return {
+            "tier": "Good",
+            "grade": "B",
+            "description": "High semantic quality. Core meaning is accurately conveyed with minor stylistic rephrasings or slight lexical shifts.",
+        }
+    elif pct >= 55.0:
+        return {
+            "tier": "Moderate",
+            "grade": "C",
+            "description": "Adequate translation. The overall gist is understandable, but secondary clauses, morphological nuances, or specific terms may be imprecise.",
+        }
+    elif pct >= 40.0:
+        return {
+            "tier": "Poor",
+            "grade": "D",
+            "description": "Fragmentary translation. Significant semantic drift or severe omissions; only partial disjointed keywords are retained.",
+        }
+    else:
+        return {
+            "tier": "Severely Deficient",
+            "grade": "F",
+            "description": "Unusable translation. The original meaning is largely lost, contradictory, or completely hallucinated.",
+        }
 
 
 @dataclass
@@ -14,7 +71,7 @@ class GeminiScoreResult:
     Attributes
     ----------
     score: float
-        The overall system-level average score across all samples.
+        The overall aggregated system-level score (mean across all samples).
     scores: List[float]
         Per-sample semantic similarity scores.
     predictions: List[str]
@@ -53,11 +110,53 @@ class GeminiScoreResult:
             "translation": self.translations[idx],
             "score": self.scores[idx],
             "language": self.languages[idx],
+            "tier": get_performance_tier(self.scores[idx], self.scale)["tier"],
         }
+
+    @property
+    def tier(self) -> str:
+        """Returns the qualitative performance tier of the aggregate system score."""
+        return get_performance_tier(self.score, self.scale)["tier"]
+
+    @property
+    def grade(self) -> str:
+        """Returns the letter grade (A, B, C, D, F) of the aggregate score."""
+        return get_performance_tier(self.score, self.scale)["grade"]
+
+    @property
+    def tier_description(self) -> str:
+        """Returns the explanatory interpretation of the aggregate score tier."""
+        return get_performance_tier(self.score, self.scale)["description"]
+
+    def by_language(self) -> Dict[str, Dict[str, Any]]:
+        """Aggregates scores broken down by language for multilingual evaluations."""
+        import numpy as np
+
+        grouped: Dict[str, List[float]] = {}
+        for lang, s in zip(self.languages, self.scores):
+            grouped.setdefault(lang, []).append(s)
+
+        breakdown: Dict[str, Dict[str, Any]] = {}
+        for lang, lang_scores in grouped.items():
+            arr = np.array(lang_scores)
+            mean_score = float(np.mean(arr))
+            tier_info = get_performance_tier(mean_score, self.scale)
+            breakdown[lang] = {
+                "count": len(lang_scores),
+                "score": mean_score,
+                "median": float(np.median(arr)),
+                "std": float(np.std(arr)),
+                "min": float(np.min(arr)),
+                "max": float(np.max(arr)),
+                "tier": tier_info["tier"],
+                "grade": tier_info["grade"],
+            }
+        return breakdown
 
     def __repr__(self) -> str:
         return (
             f"GeminiScoreResult(score={self.score:.2f}, "
+            f"tier='{self.tier}', "
             f"num_samples={len(self.scores)}, "
             f"scale='{self.scale}', "
             f"model='{self.model}', "
@@ -66,8 +165,11 @@ class GeminiScoreResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts the result to a dictionary."""
-        return {
+        d = {
             "score": self.score,
+            "tier": self.tier,
+            "grade": self.grade,
+            "tier_description": self.tier_description,
             "scores": self.scores,
             "predictions": self.predictions,
             "references": self.references,
@@ -77,6 +179,10 @@ class GeminiScoreResult:
             "model": self.model,
             "similarity_model": self.similarity_model,
         }
+        unique_langs = set(self.languages)
+        if len(unique_langs) > 1:
+            d["by_language"] = self.by_language()
+        return d
 
     def to_json(self, indent: int = 2) -> str:
         """Serializes the result dictionary to a JSON formatted string."""
@@ -98,6 +204,7 @@ class GeminiScoreResult:
             "translation": self.translations,
             "score": self.scores,
             "language": self.languages,
+            "tier": [get_performance_tier(s, self.scale)["tier"] for s in self.scores],
         }
         return pd.DataFrame(data)
 
@@ -110,16 +217,38 @@ class GeminiScoreResult:
 
         arr = np.array(self.scores)
         unit_sym = "%" if self.scale == "percent" else ""
-        return (
-            f"=== GeminiScore Evaluation Summary ===\n"
-            f"System Score (Mean) : {self.score:.2f}{unit_sym}\n"
-            f"Median              : {float(np.median(arr)):.2f}{unit_sym}\n"
-            f"Std Dev             : {float(np.std(arr)):.2f}\n"
-            f"Min                 : {float(np.min(arr)):.2f}{unit_sym}\n"
-            f"Max                 : {float(np.max(arr)):.2f}{unit_sym}\n"
-            f"Samples Evaluated   : {len(self.scores)}\n"
-            f"Gemini Model        : {self.model}\n"
-            f"Similarity Model    : {self.similarity_model}\n"
-            f"Scale               : {self.scale}\n"
-            f"======================================"
-        )
+        tier_info = get_performance_tier(self.score, self.scale)
+
+        lines = [
+            "===========================================================",
+            "               GeminiScore Evaluation Summary              ",
+            "===========================================================",
+            f"Final Aggregated Score : {self.score:.2f}{unit_sym}",
+            f"Performance Tier       : {tier_info['tier']} (Grade {tier_info['grade']})",
+            f"Interpretation         : {tier_info['description']}",
+            "-----------------------------------------------------------",
+            f"Sample Count           : {len(self.scores)}",
+            f"Median Score           : {float(np.median(arr)):.2f}{unit_sym}",
+            f"Std Deviation          : {float(np.std(arr)):.2f}",
+            f"Min Score              : {float(np.min(arr)):.2f}{unit_sym}",
+            f"Max Score              : {float(np.max(arr)):.2f}{unit_sym}",
+            f"Gemini Model           : {self.model}",
+            f"Similarity Model       : {self.similarity_model}",
+            f"Scale                  : {self.scale}",
+        ]
+
+        # Multi-language breakdown if multiple languages present
+        unique_langs = sorted(list(set(self.languages)))
+        if len(unique_langs) > 1:
+            lines.append("-----------------------------------------------------------")
+            lines.append("Language Breakdown:")
+            by_lang = self.by_language()
+            for lang in unique_langs:
+                l_info = by_lang[lang]
+                lines.append(
+                    f"  • {lang:<16}: {l_info['score']:.2f}{unit_sym} "
+                    f"[{l_info['tier']}, Grade {l_info['grade']}] (N={l_info['count']})"
+                )
+
+        lines.append("===========================================================")
+        return "\n".join(lines)
